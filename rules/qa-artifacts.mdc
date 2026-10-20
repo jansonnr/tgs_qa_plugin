@@ -1,0 +1,15 @@
+---
+description: Каталог артеfactов QA-плагина в workspace
+globs: .qa/**/*
+alwaysApply: false
+---
+
+Артефакты живут **только** в `.qa/` (MVP). Путь с `..` или вне `.qa/` не записывать.
+
+- Не коммитить `.qa/cache/` (Zephyr index и тела кейсов).
+- Материалы, reviews, drafts и `.qa/prompts/` можно коммитить по решению команды. Токены и сырые ошибки API — нельзя.
+- Один `materials/manifest.json` — одна активная задача. Чужой ключ Jira не дописывать молча.
+- `materials/manifest.json` — источник истины для якорей dedupe и уточнения.
+- `prompts/testcases-project.md` — опциональное дополнение промпта генерации кейсов (см. `prompts/testcases.md`).
+- Черновик: `drafts/testcases/<run-id>.json` (`run_id`, `revision`, `cases`). Снимок перед перезаписью: `<run-id>.vN.json`. Plan: `<run-id>.dedupe-plan.json`. Журнал: `<run-id>-apply-log.json`.
+- Пишите JSON с UTF-8; идентификаторы на английском, пояснения пользователю — на русском.

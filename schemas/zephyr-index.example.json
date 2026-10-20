@@ -1,0 +1,17 @@
+{
+  "project_key": "QA",
+  "folder_id": "12345",
+  "folder_path": "/QA/Payments",
+  "synced_at": "2026-10-14T11:00:00Z",
+  "complete": true,
+  "cases": [
+    {
+      "key": "QA-T77",
+      "name": "Успешная оплата картой",
+      "folder": "/QA/Payments",
+      "status": "Approved",
+      "priority": "Normal",
+      "updated": "2026-09-01T10:00:00Z"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+---
+description: Флаги QA-плагина из config/limits.yaml
+globs: .qa/drafts/testcases/**/*.dedupe-plan.json
+alwaysApply: false
+---
+
+Перед apply прочитай `config/limits.yaml` в корне плагина:
+
+- `dedupe_auto_update_allowed: false` — **запрещён** auto-update в TMS без preview, diff и «да, применить».
+- Сильное совпадение в dedupe — `ask`, не `update`, пока QA не выбрал действие.
+- Update только для `target_key` из dedupe-plan после diff со **свежим** `get_test_case`, не со старым файлом кеша.
+- Нерешённый `ask` блокирует весь apply.
+
+Числовые лимиты TGS в MVP **не** используются; при очень больших материалах предупреди о контексте.

@@ -1,0 +1,7 @@
+{
+  "name": "tgs-qa-cursor",
+  "description": "QA in Cursor: materials, doc review, test cases, anchors, dedupe, Zephyr apply",
+  "version": "0.3.3",
+  "author": { "name": "Test Generator Suite" },
+  "keywords": ["qa", "zephyr", "test-cases", "jira", "confluence", "dedupe"]
+}

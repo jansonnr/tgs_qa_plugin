@@ -1,0 +1,16 @@
+---
+description: Gate Zephyr search/dedupe на подтверждённые якоря и папки в manifest
+globs: .qa/materials/manifest.json
+alwaysApply: false
+---
+
+Перед **`search_test_cases` по якорям**, `/qa-zephyr-sync-index` (anchor search), `/qa-dedupe`:
+
+- `search_anchors_confirmed` MUST быть `true`.
+- `search_anchors` — непустой массив (3–10 фраз после `/qa-anchors`).
+- `search_folders` — непустой массив, `project_key` задан (подтверждены на `/qa-zephyr-select`).
+- `anchors_draft_run_id` и `anchors_draft_revision` MUST совпадать с `run_id` и `revision` черновика, либо QA явно подтвердил расхождение в чате.
+
+Browse (`get_folder_tree`), `/qa-zephyr-select`, list in folder по `search_folders` — **без** gate якорей.
+
+Существенное изменение черновика (`name`, `preconditions`, `steps`, `test_data`, `expected_results`, состав кейсов) сбрасывает `search_anchors_confirmed` в `false`. Смена только labels, folder, status, priority confirm сохраняет и обновляет `anchors_draft_revision`.

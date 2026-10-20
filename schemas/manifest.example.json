@@ -1,0 +1,19 @@
+{
+  "run_id": "20261009-proj-123",
+  "clarification": "Проверить негативы по оплате",
+  "project_key": "QA",
+  "testcases_project_prompt": "prompts/testcases-project.md",
+  "search_folders": ["/QA/Payments"],
+  "search_anchors": [],
+  "search_anchors_confirmed": false,
+  "anchors_draft_run_id": null,
+  "anchors_draft_revision": null,
+  "materials": [
+    {
+      "id": "m1",
+      "type": "jira",
+      "provenance": "PROJ-123",
+      "bytes": 12000
+    }
+  ]
+}

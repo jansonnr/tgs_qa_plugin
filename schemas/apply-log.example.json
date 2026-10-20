@@ -1,0 +1,33 @@
+{
+  "run_id": "20261009-proj-123",
+  "draft_revision": 2,
+  "preview_fingerprint": "1|update|QA-T77|Успешная оплата картой|/QA/Payments|Draft|Normal\n2|create||Отказ банка при оплате|/QA/Payments|Draft|Normal",
+  "user_confirmed": true,
+  "finished": false,
+  "items": [
+    {
+      "draft_id": "1",
+      "operation": "update",
+      "key": "QA-T77",
+      "status": "ok",
+      "error": null,
+      "remote_updated": "2026-09-01T10:00:00Z"
+    },
+    {
+      "draft_id": "2",
+      "operation": "create",
+      "key": null,
+      "status": "unknown",
+      "error": "timeout",
+      "remote_updated": null
+    },
+    {
+      "draft_id": "3",
+      "operation": "skip",
+      "key": null,
+      "status": "skipped",
+      "error": null,
+      "remote_updated": null
+    }
+  ]
+}

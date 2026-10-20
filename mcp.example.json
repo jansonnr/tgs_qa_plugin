@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "user-zephyr-scale": {
+      "comment": "Скопируйте блок из Cursor Settings → MCP. Креды: set_credentials → %APPDATA%/zephyr-scale-mcp/config.json (Windows). Расширения MVP: docs/MCP-EXTEND.md"
+    }
+  }
+}

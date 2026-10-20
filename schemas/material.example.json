@@ -1,0 +1,8 @@
+{
+  "id": "m1-jira-proj-123",
+  "type": "jira",
+  "provenance": "PROJ-123",
+  "fetched_at": "2026-10-14T08:00:00Z",
+  "title": "Оплата картой в checkout",
+  "text": "Нормализованный текст задачи (plain text или markdown без секретов)."
+}

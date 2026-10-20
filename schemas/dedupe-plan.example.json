@@ -1,0 +1,29 @@
+{
+  "run_id": "20261009-proj-123",
+  "draft_revision": 2,
+  "search_status": "complete",
+  "generated_at": "2026-10-09T12:00:00Z",
+  "preview_fingerprint": null,
+  "items": [
+    {
+      "draft_id": "1",
+      "draft_name": "Успешная оплата картой",
+      "action": "ask",
+      "target_key": "QA-T77",
+      "candidates": ["QA-T77"],
+      "body_read": true,
+      "score": 0.91,
+      "rationale": "Совпадает название; тело прочитано, решение за QA"
+    },
+    {
+      "draft_id": "2",
+      "draft_name": "Отказ банка при оплате",
+      "action": "create",
+      "target_key": null,
+      "candidates": [],
+      "body_read": false,
+      "score": 0.0,
+      "rationale": "В выбранной области похожих не найдено"
+    }
+  ]
+}

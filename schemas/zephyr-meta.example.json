@@ -1,0 +1,7 @@
+{
+  "project_key": "QA",
+  "synced_at": "2026-10-14T11:00:00Z",
+  "folder_ids": ["12345", "12346"],
+  "complete": true,
+  "note": "Index-only cache; full bodies under cases/<key>.json. complete=false если список оборван или агент не уверен."
+}
