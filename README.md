@@ -24,8 +24,9 @@ API-тестов, базы знаний и test run.
 1. Склонируйте репозиторий или скопируйте каталог в
    `~/.cursor/plugins/local/tgs-qa-cursor`.
 2. В Cursor: **Customize** → skills, rules, commands.
-3. MCP: `user-zephyr-scale` — [mcp.example.json](mcp.example.json),
-   пробелы API — [docs/MCP-GAP-ANALYSIS.md](docs/MCP-GAP-ANALYSIS.md).
+3. MCP `user-zephyr-scale` в этот плагин не входит. Его подключают отдельно в Cursor:
+   [mcp.example.json](mcp.example.json), пробелы API —
+   [docs/MCP-GAP-ANALYSIS.md](docs/MCP-GAP-ANALYSIS.md).
 4. В рабочем проекте QA добавьте в `.gitignore`:
 
    ```gitignore
@@ -45,6 +46,10 @@ API-тестов, базы знаний и test run.
 
 Примеры JSON: [schemas/](schemas/). MCP: [docs/MCP-EXTEND.md](docs/MCP-EXTEND.md).
 
+## Лицензия
+
+[MIT](LICENSE). Copyright (c) 2026 janson_nr.
+
 ## Версия
 
-0.3.3 — см. [CHANGELOG.md](CHANGELOG.md).
+0.3.4 — см. [CHANGELOG.md](CHANGELOG.md).
