@@ -3,8 +3,9 @@
 Cursor-плагин для QA: материалы, doc review, черновики тест-кейсов, dedupe и
 apply (create/update) в Zephyr Scale через MCP.
 
-Отдельный проект. [Test Generator Suite](https://github.com/bezobrazieq/tgs) —
-источник идей; форматы и поведение задаёт [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
+Репозиторий: [jansonnr/tgs_qa_plugin](https://github.com/jansonnr/tgs_qa_plugin).
+[Test Generator Suite](https://github.com/bezobrazieq/tgs) — источник идей;
+форматы и поведение задаёт [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
 
 ## Требования
 
@@ -48,7 +49,7 @@ API-тестов, базы знаний и test run.
 
 ## Лицензия
 
-[MIT](LICENSE). Copyright (c) 2026 janson_nr.
+[MIT](LICENSE). Copyright (c) 2026 Nelli.
 
 ## Версия
 
