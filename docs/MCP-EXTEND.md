@@ -1,6 +1,6 @@
 # Расширение MCP `user-zephyr-scale` (MVP)
 
-Плагин **не** содержит сервер MCP. Для E2E по [ACCEPTANCE-E2E.md](ACCEPTANCE-E2E.md) в том же MCP нужны tools.
+Исходники MCP — каталог [`zephyr-scale-mcp/`](../zephyr-scale-mcp/) в этом репозитории; Cursor запускает их из корневого `mcp.json`. Для E2E по [ACCEPTANCE-E2E.md](ACCEPTANCE-E2E.md) в том же MCP нужны tools.
 
 Ответственность и границы гарантии — [REQUIREMENTS.md](REQUIREMENTS.md) §2.1.
 Способ поиска по якорям, страницы вложенных папок и `id` шагов при update здесь **не** задаются (ревью п. 1).
@@ -13,7 +13,8 @@
 | `get_folder_tree`, `get_folder` | browse/select | Есть |
 | `list_folder_test_cases` | sync-index без search по всему проекту | **Добавить** |
 | `search_test_cases`, `get_test_case` | sync-index, dedupe, refresh | Есть |
-| `create_test_case`, `update_test_case` | apply | update — **Добавить** |
+| `create_test_case`, `update_test_case` | apply (прямые вызовы gated; запись через `apply_plan`) | Есть |
+| `prepare_apply`, `apply_plan`, `resume_apply`, `sync_testcase_index`, `match_test_case_candidates` | apply, dedupe, index | Есть |
 | `list_project_metadata` | status/priority при create | **Добавить** |
 
 Перед шагом агент проверяет, что tool из колонки есть в сессии. Нет tool — stop и имя в чат. Номера версии MCP нет.

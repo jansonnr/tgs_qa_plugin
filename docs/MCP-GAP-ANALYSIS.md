@@ -9,7 +9,7 @@
 | Browse folder | `get_folder_tree`, `get_folder` | tree есть |
 | List cases in folder | `list_folder_test_cases` | **Добавить** |
 | Dedupe read | `search_test_cases`, `get_test_case` | Есть; search — summary only |
-| Apply | `create_test_case`, `update_test_case` | create есть; update — **Добавить** |
+| Apply | `prepare_apply`, `apply_plan`, `create_test_case`, `update_test_case` | Есть (запись через apply; прямые mutate gated) |
 | Metadata | `list_project_metadata` | **Добавить** (status/priority) |
 
 **Не нужно в MVP:** test run, last result, attachments, отдельный knowledge/RAG MCP,

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.5
+
+- MCP Zephyr Scale перенесён в `zephyr-scale-mcp/`; подключение через корневой `mcp.json` и `plugin.json` (`mcpServers`).
+
 ## 0.3.4
 
 - Лицензия MIT для публикации.

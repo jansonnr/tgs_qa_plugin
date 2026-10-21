@@ -20,14 +20,24 @@ API-тестов, базы знаний и test run.
 Редактируемые шаблоны для модели: [prompts/README.md](prompts/README.md). Skills
 подключают их при `/qa-materials`, doc review, testcases, dedupe и apply.
 
-## Установка (локально)
+## Установка
 
-1. Склонируйте репозиторий или скопируйте каталог в
-   `~/.cursor/plugins/local/tgs-qa-cursor`.
-2. В Cursor: **Customize** → skills, rules, commands.
-3. MCP `user-zephyr-scale` в этот плагин не входит. Его подключают отдельно в Cursor:
-   [mcp.example.json](mcp.example.json), пробелы API —
-   [docs/MCP-GAP-ANALYSIS.md](docs/MCP-GAP-ANALYSIS.md).
+1. **Marketplace или git:** Customize → Plugins → `tgs-qa-cursor`, либо клон в
+   `~/.cursor/plugins/local/tgs-qa-cursor` и Reload Window.
+2. Плагин поднимает MCP **zephyr-scale** из [mcp.json](mcp.json) (код в
+   [zephyr-scale-mcp/](zephyr-scale-mcp/)). Нужен Python 3.11+ и зависимости:
+
+   ```powershell
+   cd zephyr-scale-mcp
+   py -3.12 -m venv .venv
+   .\.venv\Scripts\python.exe -m pip install -e .
+   ```
+
+   Cursor должен вызывать тот же Python (или укажите полный путь к
+   `.venv\Scripts\python.exe` в своём `%USERPROFILE%\.cursor\mcp.json`, если
+   дублируете сервер вручную). Токены — один раз `set_credentials` (см.
+   [zephyr-scale-mcp/README.md](zephyr-scale-mcp/README.md)).
+3. Пробелы API для materials/index: [docs/MCP-GAP-ANALYSIS.md](docs/MCP-GAP-ANALYSIS.md).
 4. В рабочем проекте QA добавьте в `.gitignore`:
 
    ```gitignore
@@ -53,4 +63,4 @@ API-тестов, базы знаний и test run.
 
 ## Версия
 
-0.3.4 — см. [CHANGELOG.md](CHANGELOG.md).
+0.3.5 — см. [CHANGELOG.md](CHANGELOG.md).

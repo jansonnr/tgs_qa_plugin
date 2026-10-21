@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "zephyr-scale": {
+      "command": "python",
+      "args": ["-m", "zephyr_scale_mcp"],
+      "cwd": "${CURSOR_PLUGIN_ROOT}/zephyr-scale-mcp",
+      "env": {
+        "PYTHONPATH": "${CURSOR_PLUGIN_ROOT}/zephyr-scale-mcp/src"
+      }
+    }
+  }
+}

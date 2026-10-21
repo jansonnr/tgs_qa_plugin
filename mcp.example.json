@@ -1,7 +1,13 @@
 {
   "mcpServers": {
-    "user-zephyr-scale": {
-      "comment": "Скопируйте блок из Cursor Settings → MCP. Креды: set_credentials → %APPDATA%/zephyr-scale-mcp/config.json (Windows). Расширения MVP: docs/MCP-EXTEND.md"
+    "zephyr-scale": {
+      "comment": "При установке плагина tgs-qa-cursor этот блок уже в plugin mcp.json. Ручной дубликат — только если нужен venv с полным путём к python.exe",
+      "command": "C:\\path\\to\\tgs_qa_plugin\\zephyr-scale-mcp\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "zephyr_scale_mcp"],
+      "cwd": "C:\\path\\to\\tgs_qa_plugin\\zephyr-scale-mcp",
+      "env": {
+        "PYTHONPATH": "C:\\path\\to\\tgs_qa_plugin\\zephyr-scale-mcp\\src"
+      }
     }
   }
 }

@@ -8,4 +8,4 @@
 - Не добавлять в MVP: case review, Postman/API tests, RAG, test run, лимиты TGS.
 - Артеfactы QA в **workspace** пользователя под `.qa/`; в этом репо только плагин.
 - Команды: `commands/`; skills: `skills/`; промпты: `prompts/`; примеры JSON: `schemas/`.
-- MCP сервер не в этом репо — контракт расширений: `docs/MCP-EXTEND.md`.
+- MCP-сервер Zephyr: каталог `zephyr-scale-mcp/`, подключение в корневом `mcp.json`. Контракт tools: `docs/MCP-EXTEND.md`.

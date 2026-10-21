@@ -1,6 +1,13 @@
 # Локальные артеfactы при разработке плагина в том же каталоге
 .qa/
 
+# Python (zephyr-scale-mcp)
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.venv/
+
 # OS / editor
 .DS_Store
 Thumbs.db
