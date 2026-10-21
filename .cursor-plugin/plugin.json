@@ -6,5 +6,6 @@
   "repository": "https://github.com/jansonnr/tgs_qa_plugin",
   "homepage": "https://github.com/jansonnr/tgs_qa_plugin",
   "author": { "name": "Nelli" },
+  "logo": "assets/logo.svg",
   "keywords": ["qa", "zephyr", "test-cases", "jira", "confluence", "dedupe"]
 }
