@@ -18,7 +18,7 @@ description: Generate structured test case draft JSON from .qa materials and opt
 3. Number materials in the user message; one cohesive suite, not N unrelated suites per file.
 4. Output object `{ run_id, revision, cases }` to `.qa/drafts/testcases/<run-id>.json` per rules/qa-testcase-format.
    New generation → new `run_id` (`YYYYMMDD-<slug>`), `revision: 1`, stable `draft_id` from `"1"`.
-5. Human-readable `.md` alongside.
+5. Human-readable `<run-id>.md` alongside JSON — **полный** текст всех кейсов по [testcases-base.md](../../prompts/testcases-base.md) § «Markdown»; не только оглавление.
 6. If XMind material present: add `coverage-xmind.json` when paths are known.
 7. Substantial change (`name`, preconditions, steps, test_data, expected_results, add/remove case):
    set `search_anchors_confirmed: false`. Labels, folder, status, priority alone do not reset confirm;
