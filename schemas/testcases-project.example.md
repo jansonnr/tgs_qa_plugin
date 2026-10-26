@@ -19,10 +19,10 @@
 - **Папки по умолчанию:** `/QA/FeatureName` — подставлять в `folder`, если материалы не указали иное
 - **status / priority:** Draft + Normal по умолчанию; High для payment/security-кейсов
 
-## Обязательные метки и трассировка
+## Метка Zephyr (apply)
 
-- В каждом кейсе label с типом: `smoke` | `regression` | `negative` (один основной)
-- Ссылка на Jira в `labels[]`: `PROJ-123` или id материала
+- При импорте в TMS метка **`AI_Cursor`** задаётся плагином ([config/zephyr-defaults.yaml](../config/zephyr-defaults.yaml)); в project overlay не переопределяй другими labels для Zephyr.
+- Трассировка к Jira — в `name`/шагах, не в labels TMS.
 
 ## Тестовые данные и окружения
 

@@ -118,6 +118,7 @@ class ZephyrClient:
         priority: str = "Normal",
         project_key: str | None = None,
         steps: list[dict[str, Any]] | None = None,
+        labels: list[str] | None = None,
         extra: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {
@@ -130,6 +131,8 @@ class ZephyrClient:
             body["objective"] = objective
         if folder is not None:
             body["folder"] = folder
+        if labels:
+            body["labels"] = labels
         normalized = _normalize_steps(steps)
         if normalized:
             body["testScript"] = {"type": "STEP_BY_STEP", "steps": normalized}
@@ -150,6 +153,7 @@ class ZephyrClient:
         status: str | None = None,
         priority: str | None = None,
         steps: list[dict[str, Any]] | None = None,
+        labels: list[str] | None = None,
         extra: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {}
@@ -163,6 +167,8 @@ class ZephyrClient:
             body["status"] = status
         if priority is not None:
             body["priority"] = priority
+        if labels is not None:
+            body["labels"] = labels
         normalized = _normalize_steps(steps)
         if normalized:
             body["testScript"] = {"type": "STEP_BY_STEP", "steps": normalized}

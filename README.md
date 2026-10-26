@@ -57,6 +57,8 @@ API-тестов, базы знаний и test run.
 
 Примеры JSON: [schemas/](schemas/). MCP: [docs/MCP-EXTEND.md](docs/MCP-EXTEND.md).
 
+Импорт в Zephyr: метка **`AI_Cursor`** на create — [config/zephyr-defaults.yaml](config/zephyr-defaults.yaml) (MCP подставляет при apply).
+
 ## Лицензия
 
 [MIT](LICENSE). Copyright (c) 2026 Nelli.

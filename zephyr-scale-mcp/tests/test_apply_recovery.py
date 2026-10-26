@@ -64,6 +64,37 @@ def test_auth_error_stops_the_rest_of_the_batch() -> None:
     assert results[1]["status"] == "not_run"
 
 
+def test_create_uses_plugin_import_label(tmp_path: Path) -> None:
+    class Client:
+        def __init__(self) -> None:
+            self.last_labels: list[str] | None = None
+
+        def create_test_case(self, **kwargs: object) -> dict:
+            self.last_labels = kwargs.get("labels")  # type: ignore[assignment]
+            return {"ok": True, "status_code": 201, "data": {"key": "QA-T9"}}
+
+        def get_test_case(self, test_case_key: str) -> dict:
+            raise AssertionError(test_case_key)
+
+        def update_test_case(self, *_args: object, **_kwargs: object) -> dict:
+            raise AssertionError("update")
+
+        def delete_test_case(self, test_case_key: str) -> dict:
+            raise AssertionError(test_case_key)
+
+    client = Client()
+    operations = [
+        {
+            "case_id": "c1",
+            "action": "create",
+            "name": "Новый",
+            "labels": ["should-not-pass-through"],
+        }
+    ]
+    execute_plan_operations(client, operations, plan_hash="plan-import", log_root=tmp_path)  # type: ignore[arg-type]
+    assert client.last_labels == ["AI_Cursor"]
+
+
 def test_successful_operation_is_not_sent_again(tmp_path: Path) -> None:
     class Client:
         def __init__(self) -> None:

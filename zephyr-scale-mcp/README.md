@@ -37,6 +37,8 @@ set_credentials(
 
 Create/update/delete только через **`prepare_apply`** и **`apply_plan`**. Прямые `create_test_case` / `update_test_case` / `delete_test_case` отклоняются (`WRITE_GATE_DENIED`), кроме отладки с `ZEPHYR_ALLOW_DIRECT_WRITE=1`.
 
+При **create** через apply в Zephyr всегда ставится одна метка: **`AI_Cursor`** (канон: [config/zephyr-defaults.yaml](../config/zephyr-defaults.yaml)). Переопределение: env `ZEPHYR_IMPORT_LABEL`.
+
 Контракт tools для QA-плагина и пробелы MVP: [docs/MCP-EXTEND.md](../docs/MCP-EXTEND.md).
 
 ## Тесты

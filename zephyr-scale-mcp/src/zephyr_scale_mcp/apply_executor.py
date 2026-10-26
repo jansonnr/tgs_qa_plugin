@@ -6,6 +6,7 @@ from typing import Any, Literal
 from zephyr_scale_mcp.apply_log import append_apply_log, latest_apply_entries
 from zephyr_scale_mcp.client import ZephyrClient
 from zephyr_scale_mcp.data_policy import sanitize_text
+from zephyr_scale_mcp.import_policy import import_labels_for_zephyr
 from zephyr_scale_mcp.plan_rules import effective_action, fingerprint_from_response, update_changes
 
 ApplyAction = Literal["create", "update", "delete", "skip"]
@@ -167,6 +168,7 @@ def execute_plan_operations(
                     priority=str(operation.get("priority", "Normal")),
                     project_key=operation.get("project_key"),
                     steps=operation.get("steps"),
+                    labels=import_labels_for_zephyr(),
                 )
             elif action == "delete":
                 entry["result"] = client.delete_test_case(str(operation["test_case_key"]))

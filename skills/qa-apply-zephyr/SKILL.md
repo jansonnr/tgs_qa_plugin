@@ -14,6 +14,8 @@ description: Apply dedupe-plan to Zephyr with create and update after explicit u
 
 Read [config/limits.yaml](../../config/limits.yaml): `dedupe_auto_update_allowed` MUST stay `false` in MVP.
 
+Import label for Zephyr create: [config/zephyr-defaults.yaml](../../config/zephyr-defaults.yaml) (`AI_Cursor` by default). Preview must show this label; MCP enforces it on create (draft `labels` are not copied to TMS).
+
 Check required MCP tools (`create_test_case`, and `update_test_case` if the plan has updates). If a tool is missing, stop and name it.
 
 Do not call mutate tools until all of the following hold:

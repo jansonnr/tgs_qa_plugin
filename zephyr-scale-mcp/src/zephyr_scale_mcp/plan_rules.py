@@ -216,6 +216,11 @@ def update_changes(operation: dict[str, Any], remote: dict[str, Any]) -> dict[st
             continue
         if _plain(operation[field]) != _plain(data.get(field)):
             changes[field] = operation[field]
+    if operation.get("labels") is not None:
+        want = [str(x).strip() for x in operation["labels"] if str(x).strip()]
+        have = [str(x).strip() for x in (data.get("labels") or []) if str(x).strip()]
+        if sorted(want) != sorted(have):
+            changes["labels"] = want
     if operation.get("steps") is not None:
         script = data.get("testScript") if isinstance(data.get("testScript"), dict) else {}
         remote_steps = script.get("steps") if isinstance(script.get("steps"), list) else []

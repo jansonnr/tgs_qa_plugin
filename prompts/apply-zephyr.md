@@ -16,6 +16,8 @@
 Покажи operation, `draft_id`, name, `target_key`, folder, status, priority, labels.
 Для create покажи значения, которые уйдут в TMS. Пустые status/priority замени на `Draft` и `Normal` и напиши об этом. Пустой folder — спроси, не выдумывай.
 
+**Метка Zephyr при create:** всегда **`AI_Cursor`** (канон: [config/zephyr-defaults.yaml](../config/zephyr-defaults.yaml)). MCP подставляет её при apply; в preview для create указывай `labels: [AI_Cursor]`, не копируй прочие строки из черновика в TMS.
+
 Для update diff строй по свежему `get_test_case`. Рядом выведи `preview_fingerprint`:
 строки `draft_id|action|target_key|name|folder|status|priority` по возрастанию `draft_id`.
 Запиши fingerprint в план. Фраза подтверждает только его и текущий `draft_revision`.

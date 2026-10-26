@@ -1,0 +1,3 @@
+# Метка Zephyr Scale для кейсов, созданных/импортированных через apply (MCP).
+# Переопределение: переменная окружения ZEPHYR_IMPORT_LABEL (см. zephyr-scale-mcp/README.md).
+import_label: AI_Cursor
