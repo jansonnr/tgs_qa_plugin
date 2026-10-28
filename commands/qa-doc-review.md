@@ -1,6 +1,6 @@
 ---
 name: qa-doc-review
-description: Doc review по материалам из .qa/materials/manifest.json
+description: Ревью постановки (П1–П6) по материалам из .qa/materials/manifest.json
 ---
 
 Run skill **`qa-doc-review`** using `.qa/materials/manifest.json`.

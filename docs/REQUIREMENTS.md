@@ -239,7 +239,7 @@ flowchart TB
 | **FR-MAT-02** | `clarification` в manifest; приоритет над текстом материалов | qa-materials, qa-testcases | manifest |
 | **FR-MAT-03** | **Не** требовать и **не** confirm якоря на этапе materials | qa-materials | manifest |
 | **FR-MAT-04** | Опционально предложить `project_key`, `search_folders` без gate | qa-materials | manifest |
-| **FR-DOC-01** | Doc review → findings, questions, sources | qa-doc-review | reviews/doc/ |
+| **FR-DOC-01** | Doc review → violations, remarks, summary, sources | qa-doc-review | reviews/doc/ |
 | **FR-DOC-02** | Без RAG / knowledge base | qa-doc-review | — |
 | **FR-TC-01** | Генерация связного suite кейсов по materials (+ optional doc review) | qa-testcases | draft JSON+MD |
 | **FR-TC-02** | Формат кейса: steps/test_data/expected_results одной длины | qa-testcases | rule format |

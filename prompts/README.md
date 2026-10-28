@@ -7,7 +7,7 @@
 | --- | --- |
 | [_source-trust.md](_source-trust.md) | Общие правила (в начале каждого run) |
 | [anchors.md](anchors.md) | Якоря dedupe (`/qa-anchors`, после testcases) |
-| [doc-review.md](doc-review.md) | Анализ документации |
+| [doc-review.md](doc-review.md) | Бинарное ревью постановки (П1–П6, UPD, замечания) → `.qa/reviews/doc/` |
 | [testcases-base.md](testcases-base.md) | Методика кейсов и чек-листов для плагина (слой 1, `.qa/`, TMS) |
 | [testcases.md](testcases.md) | Генерация: база + опциональный overlay в `.qa/` |
 | [testcases-refine.md](testcases-refine.md) | Доработка существующего черновика |

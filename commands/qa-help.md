@@ -16,7 +16,7 @@ description: Справка по командам QA-плагина и скво�
 | --- | --- | --- |
 | Базовые | `/qa-help` | Эта справка |
 | | `/qa-materials` | Jira, Confluence, файлы → `.qa/materials/` |
-| | `/qa-doc-review` | Анализ документации → `.qa/reviews/doc/` |
+| | `/qa-doc-review` | Ревью постановки (П1–П6) → `.qa/reviews/doc/` |
 | | `/qa-testcases` | Черновик кейсов → `.qa/drafts/testcases/` |
 | | `/qa-anchors` | Якоря dedupe после черновика → manifest |
 | Zephyr | `/qa-zephyr-browse` | Дерево папок TMS (без search по якорям) |

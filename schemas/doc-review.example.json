@@ -1,19 +1,27 @@
 {
   "run_id": "20261014-proj-123-doc",
-  "goal": "Проверить полноту требований по оплате",
+  "goal": "Ревью постановки по оплате",
   "generated_at": "2026-10-14T09:00:00Z",
   "sources": ["m1-jira-proj-123", "m2-confluence-pay"],
-  "findings": [
+  "summary": {
+    "rules_violated": 2,
+    "violations": 3
+  },
+  "violations": [
     {
-      "severity": "warning",
-      "text": "Не описан сценарий отказа банка",
+      "rule": "P6",
+      "title": "Пробел в негативном исходе",
+      "quote": "при ошибке банка операция прерывается",
+      "location": "§ Основной поток, шаг 4",
+      "fact": "не задано наблюдаемое поведение UI и состояние заказа после прерывания",
       "source_ids": ["m1-jira-proj-123"]
     }
   ],
-  "questions": [
+  "remarks": [
     {
-      "text": "Какой HTTP-код возвращается при timeout?",
+      "text": "В материале несколько ключей Jira без явного scope текущей поставки — уточнить у аналитики/ПО",
       "source_ids": ["m2-confluence-pay"]
     }
-  ]
+  ],
+  "questions": []
 }
