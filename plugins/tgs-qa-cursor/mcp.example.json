@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "zephyr-scale": {
-      "comment": "При установке плагина tgs-qa-cursor этот блок уже в plugin mcp.json. Ручной дубликат — только если нужен venv с полным путём к python.exe",
+      "comment": "Пример переопределения в %USERPROFILE%\\.cursor\\mcp.json: venv + env с ZEPHYR_* (см. README). Плагин уже регистрирует zephyr-scale из своего mcp.json.",
       "command": "C:\\path\\to\\tgs_qa_plugin\\zephyr-scale-mcp\\.venv\\Scripts\\python.exe",
       "args": ["-m", "zephyr_scale_mcp"],
       "cwd": "C:\\path\\to\\tgs_qa_plugin\\zephyr-scale-mcp",
