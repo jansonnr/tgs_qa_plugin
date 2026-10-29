@@ -8,7 +8,7 @@ import pytest
 from zephyr_scale_mcp.apply_executor import execute_plan_operations
 from zephyr_scale_mcp.apply_log import ApplyBusy, hold_apply_lock
 from zephyr_scale_mcp.plan_rules import effective_action, fingerprint_from_response, validate_plan
-from zephyr_scale_mcp.server import create_test_case, update_test_case
+from zephyr_scale_mcp.server import create_test_case, create_test_run, delete_test_run, update_test_case
 
 
 def test_direct_write_is_rejected_without_apply(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -17,6 +17,14 @@ def test_direct_write_is_rejected_without_apply(monkeypatch: pytest.MonkeyPatch)
     updated = json.loads(update_test_case("QA-T1", name="Нельзя"))
     assert created["code"] == "WRITE_GATE_DENIED"
     assert updated["code"] == "WRITE_GATE_DENIED"
+
+
+def test_test_run_mutations_are_gated(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ZEPHYR_ALLOW_DIRECT_WRITE", raising=False)
+    created = json.loads(create_test_run(name="Нельзя"))
+    deleted = json.loads(delete_test_run("QA-R1"))
+    assert created["code"] == "WRITE_GATE_DENIED"
+    assert deleted["code"] == "WRITE_GATE_DENIED"
 
 
 def test_requirement_text_does_not_become_an_update() -> None:

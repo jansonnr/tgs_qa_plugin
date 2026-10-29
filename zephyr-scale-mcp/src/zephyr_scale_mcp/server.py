@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable
 
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
@@ -36,6 +38,20 @@ from zephyr_scale_mcp.client import ZephyrClient
 from zephyr_scale_mcp.confluence import ConfluenceClient
 from zephyr_scale_mcp.config import ConfigError, get_settings, origin_of, update_settings
 
+_zephyr_client: ZephyrClient | None = None
+_confluence_client: ConfluenceClient | None = None
+
+
+def _invalidate_http_clients() -> None:
+    global _zephyr_client, _confluence_client
+    if _zephyr_client is not None:
+        _zephyr_client._http.close()  # noqa: SLF001 — lifecycle MCP-процесса
+        _zephyr_client = None
+    if _confluence_client is not None:
+        _confluence_client._http.close()  # noqa: SLF001
+        _confluence_client = None
+
+
 mcp = MCPServer(
     "zephyr-scale",
     instructions=(
@@ -59,11 +75,17 @@ def _dumps(payload: Any) -> str:
 
 
 def _client() -> ZephyrClient:
-    return ZephyrClient(get_settings())
+    global _zephyr_client
+    if _zephyr_client is None:
+        _zephyr_client = ZephyrClient(get_settings())
+    return _zephyr_client
 
 
 def _confluence() -> ConfluenceClient:
-    return ConfluenceClient(get_settings())
+    global _confluence_client
+    if _confluence_client is None:
+        _confluence_client = ConfluenceClient(get_settings())
+    return _confluence_client
 
 
 def _apply_payload(plan_hash_value: str, run_id: str | None, results: list[dict[str, Any]]) -> dict[str, Any]:
@@ -93,15 +115,65 @@ def _plan_target(plan: dict[str, Any]) -> dict[str, str]:
     return {"origin": origin_of(settings.base_url), "project_key": project}
 
 
-def _execution_plan(plan: dict[str, Any]) -> tuple[list[dict[str, Any]], Any]:
+def _execution_plan(plan: dict[str, Any]) -> tuple[list[dict[str, Any]], Path | None]:
     validate_plan(plan)
-    workspace = None
+    workspace: Path | None = None
     if plan.get("qa_root"):
         try:
             workspace = resolve_qa_log_dir(str(plan["qa_root"]))
         except QaPathError as exc:
             raise PlanRejected("QA_PATH", str(exc)) from exc
     return redact_operations(plan), workspace
+
+
+@dataclass(frozen=True)
+class _PlanExecution:
+    adapted: dict[str, Any]
+    operations: list[dict[str, Any]]
+    workspace_log: Path | None
+    target: dict[str, str]
+    digest: str
+    log_key: str
+
+
+def _plan_execution(plan: dict[str, Any]) -> _PlanExecution:
+    adapted = _prepared_plan(plan)
+    operations, workspace_log = _execution_plan(adapted)
+    target = _plan_target(adapted)
+    digest = plan_hash(adapted, target=target)
+    log_key = run_log_key(adapted, origin=target["origin"], project_key=target["project_key"])
+    return _PlanExecution(
+        adapted=adapted,
+        operations=operations,
+        workspace_log=workspace_log,
+        target=target,
+        digest=digest,
+        log_key=log_key,
+    )
+
+
+def _apply_log_exists(log_key: str, workspace_log: Path | None) -> bool:
+    if apply_log_path(log_key).is_file():
+        return True
+    return workspace_log is not None and apply_log_path(log_key, workspace_log).is_file()
+
+
+def _apply_busy_payload() -> str:
+    return _dumps(
+        {
+            "ok": False,
+            "code": "APPLY_IN_PROGRESS",
+            "error": "Этот план уже выполняется в другом чате. Повторная запись не запущена.",
+        }
+    )
+
+
+def _run_under_apply_lock(log_key: str, runner: Callable[[], dict[str, Any]]) -> str:
+    try:
+        with hold_apply_lock(log_key):
+            return _call(runner)
+    except ApplyBusy:
+        return _apply_busy_payload()
 
 
 def _call(fn, *args, **kwargs) -> str:
@@ -146,6 +218,7 @@ def set_credentials(
         project_id=project_id,
         wiki_url=wiki_url,
     )
+    _invalidate_http_clients()
     return _dumps({"ok": True, "saved": settings.masked()})
 
 
@@ -219,69 +292,56 @@ def apply_plan(apply_token: str, plan: dict[str, Any]) -> str:
     Повторный create после unknown не выполняется: вызови resume_apply для продолжения.
     """
     try:
-        adapted = _prepared_plan(plan)
-        operations, workspace_log = _execution_plan(adapted)
-        target = _plan_target(adapted)
+        execution = _plan_execution(plan)
     except PlanRejected as exc:
         return _dumps({"ok": False, "code": exc.code, "error": exc.message})
     except ConfigError as exc:
         return _dumps({"ok": False, "code": "CONFIG", "error": str(exc)})
-    digest = plan_hash(adapted, target=target)
-    log_key = run_log_key(adapted, origin=target["origin"], project_key=target["project_key"])
-    try:
-        with hold_apply_lock(log_key):
-            record = get_apply_token_store().consume(apply_token, plan_hash=digest)
-            if record is None:
-                return _dumps(
-                    {
-                        "ok": False,
-                        "code": "APPLY_TOKEN_INVALID",
-                        "error": "apply_token недействителен, истёк, уже использован или план изменился после preview.",
-                    }
-                )
 
-            def _run() -> dict[str, Any]:
-                results = execute_plan_operations(
-                    _client(),
-                    operations,
-                    plan_hash=log_key,
-                    workspace_log_root=workspace_log,
-                )
-                return _apply_payload(log_key, record.run_id, results)
-
-            return _call(lambda: _run())
-    except ApplyBusy:
-        return _dumps(
-            {
+    def _run() -> dict[str, Any]:
+        record = get_apply_token_store().consume(apply_token, plan_hash=execution.digest)
+        if record is None:
+            return {
                 "ok": False,
-                "code": "APPLY_IN_PROGRESS",
-                "error": "Этот план уже выполняется в другом чате. Повторная запись не запущена.",
+                "code": "APPLY_TOKEN_INVALID",
+                "error": "apply_token недействителен, истёк, уже использован или план изменился после preview.",
             }
+        results = execute_plan_operations(
+            _client(),
+            execution.operations,
+            plan_hash=execution.log_key,
+            workspace_log_root=execution.workspace_log,
         )
+        return _apply_payload(execution.log_key, record.run_id, results)
+
+    return _run_under_apply_lock(execution.log_key, _run)
 
 
 @mcp.tool(
     title="Продолжить уже подтверждённый apply",
     annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False),
 )
-def resume_apply(plan: dict[str, Any]) -> str:
-    """Продолжить план, который уже прошёл prepare_apply и начал выполняться.
+def resume_apply(apply_token: str, plan: dict[str, Any]) -> str:
+    """Продолжить план, который уже прошёл apply_plan.
 
     Успешные операции не повторяются. create со статусом unknown не создаётся снова.
-    Новый apply_token не нужен: план тот же, hash должен совпасть с журналом.
+    Нужен тот же apply_token, что после prepare_apply (уже использованный при первом apply_plan).
     """
     try:
-        adapted = _prepared_plan(plan)
-        operations, workspace_log = _execution_plan(adapted)
-        target = _plan_target(adapted)
+        execution = _plan_execution(plan)
     except PlanRejected as exc:
         return _dumps({"ok": False, "code": exc.code, "error": exc.message})
     except ConfigError as exc:
         return _dumps({"ok": False, "code": "CONFIG", "error": str(exc)})
-    log_key = run_log_key(adapted, origin=target["origin"], project_key=target["project_key"])
-    if not apply_log_path(log_key).is_file() and not (
-        workspace_log is not None and apply_log_path(log_key, workspace_log).is_file()
-    ):
+    if not get_apply_token_store().authorize_resume(apply_token, plan_hash=execution.digest):
+        return _dumps(
+            {
+                "ok": False,
+                "code": "APPLY_TOKEN_INVALID",
+                "error": "resume_apply требует тот же apply_token после успешного apply_plan; токен истёк или план изменился.",
+            }
+        )
+    if not _apply_log_exists(execution.log_key, execution.workspace_log):
         return _dumps(
             {
                 "ok": False,
@@ -289,27 +349,17 @@ def resume_apply(plan: dict[str, Any]) -> str:
                 "error": "Для этого запуска нет журнала. Сначала нужен подтверждённый apply_plan.",
             }
         )
-    try:
-        with hold_apply_lock(log_key):
 
-            def _run() -> dict[str, Any]:
-                results = execute_plan_operations(
-                    _client(),
-                    operations,
-                    plan_hash=log_key,
-                    workspace_log_root=workspace_log,
-                )
-                return _apply_payload(log_key, adapted.get("run_id"), results)
-
-            return _call(lambda: _run())
-    except ApplyBusy:
-        return _dumps(
-            {
-                "ok": False,
-                "code": "APPLY_IN_PROGRESS",
-                "error": "Этот план уже выполняется в другом чате. Повторная запись не запущена.",
-            }
+    def _run() -> dict[str, Any]:
+        results = execute_plan_operations(
+            _client(),
+            execution.operations,
+            plan_hash=execution.log_key,
+            workspace_log_root=execution.workspace_log,
         )
+        return _apply_payload(execution.log_key, execution.adapted.get("run_id"), results)
+
+    return _run_under_apply_lock(execution.log_key, _run)
 
 
 @mcp.tool(
@@ -552,6 +602,8 @@ def create_test_run(
     project_key: str | None = None,
 ) -> str:
     """Создать тест-ран / цикл (POST /rest/atm/1.0/testrun). test_case_keys — список ключей, например ["QA-T77","QA-T76"]."""
+    if not direct_write_allowed():
+        return _dumps(write_gate_denied_payload())
     return _call(
         _client().create_test_run,
         name=name,
@@ -577,6 +629,8 @@ def get_test_run(test_run_key: str) -> str:
 )
 def delete_test_run(test_run_key: str) -> str:
     """Удалить тест-ран (DELETE /rest/atm/1.0/testrun/{key})."""
+    if not direct_write_allowed():
+        return _dumps(write_gate_denied_payload())
     return _call(_client().delete_test_run, test_run_key)
 
 

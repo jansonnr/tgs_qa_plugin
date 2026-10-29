@@ -35,7 +35,7 @@ For status/priority on create: use `list_project_metadata` when MCP provides it;
 1. Read `<run-id>.dedupe-plan.json` and the draft envelope. Refuse if revisions differ.
 2. Preview table in chat (no MCP mutate yet). Store `preview_fingerprint` on the plan.
 3. After confirm call `prepare_apply` with the plan, then `apply_plan` with the same plan and the returned token. Do not mutate Zephyr any other way.
-4. `apply_plan` writes the journal itself. `ok` is never repeated. `unknown` / unfinished create is not posted again. 401/403 stop the batch without downgrading an earlier success. 429 pauses the rest of the batch. Resume the same run with `resume_apply`, not a new create.
+4. `apply_plan` writes the journal itself. `ok` is never repeated. `unknown` / unfinished create is not posted again. 401/403 stop the batch without downgrading an earlier success. 429 pauses the rest of the batch. Resume the same run with `resume_apply` and the **same** `apply_token` from step 3, not a new create.
 5. Sanitize errors: code and short message, no token.
 6. Resume with «продолжить» only for `pending` items of the same fingerprint. Treat a leftover `in_progress` as `unknown`.
 7. Remind: link new/updated keys in Jira manually if the team process requires it. The plugin does not delete cases.

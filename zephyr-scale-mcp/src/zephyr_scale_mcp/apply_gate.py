@@ -76,6 +76,18 @@ class ApplyTokenStore:
         )
         return record
 
+    def authorize_resume(self, apply_token: str, *, plan_hash: str) -> bool:
+        """Resume только после успешного consume того же токена и того же plan_hash."""
+        key = apply_token.strip()
+        record = self._tokens.get(key)
+        if record is None:
+            return False
+        if not record.used:
+            return False
+        if time.time() > record.expires_at:
+            return False
+        return record.plan_hash == plan_hash.strip()
+
 
 _apply_token_store = ApplyTokenStore()
 

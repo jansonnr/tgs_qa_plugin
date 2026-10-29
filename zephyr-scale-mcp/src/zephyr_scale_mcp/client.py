@@ -3,13 +3,13 @@ from __future__ import annotations
 import json
 import time
 from email.utils import parsedate_to_datetime
-from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
 
 from zephyr_scale_mcp.config import Settings, get_settings, origin_of
+from zephyr_scale_mcp.data_policy import QaPathError, resolve_attachment_path
 from zephyr_scale_mcp.keys import (
     UnsafeKey,
     assert_api_path,
@@ -90,6 +90,7 @@ class ZephyrClient:
         *,
         params: dict[str, Any] | None = None,
         json_body: Any = None,
+        data: Any = None,
         files: Any = None,
         extra_headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
@@ -117,6 +118,7 @@ class ZephyrClient:
                     url,
                     params=params,
                     json=json_body,
+                    data=data,
                     files=files,
                     headers=headers,
                 )
@@ -252,25 +254,19 @@ class ZephyrClient:
         file_path: str,
         filename: str | None = None,
     ) -> dict[str, Any]:
-        path = Path(file_path).expanduser()
-        if not path.is_file():
-            return {"ok": False, "status_code": 0, "error": f"Файл не найден: {path}"}
+        try:
+            path = resolve_attachment_path(file_path)
+        except QaPathError as exc:
+            return {"ok": False, "status_code": 0, "error": str(exc)}
         name = filename or path.name
+        key = path_segment(require_case_key(test_case_key))
         with path.open("rb") as handle:
-            files = {"file": (name, handle)}
-            data = {"filename": name}
-            key = path_segment(require_case_key(test_case_key))
-            url = (
-                f"{self.settings.base_url.rstrip('/')}"
-                f"/rest/atm/1.0/testcase/{key}/attachments"
+            return self.request(
+                "POST",
+                f"/rest/atm/1.0/testcase/{key}/attachments",
+                data={"filename": name},
+                files={"file": (name, handle)},
             )
-            headers = {
-                "Authorization": self.settings.auth_header(),
-                "Accept": "application/json",
-                "X-Atlassian-Token": "no-check",
-            }
-            response = self._http.post(url, headers=headers, files=files, data=data)
-        return _format_response(response)
 
     def create_test_run(
         self,

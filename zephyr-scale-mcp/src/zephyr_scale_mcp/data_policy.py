@@ -154,6 +154,25 @@ def redact_operations(plan: dict[str, Any]) -> list[dict[str, Any]]:
     return redacted
 
 
+def resolve_attachment_path(file_path: str) -> Path:
+    """Локальный файл для upload — только внутри каталога .qa (защита от произвольного чтения)."""
+    path = Path(file_path).expanduser().resolve()
+    if not path.is_file():
+        raise QaPathError(f"Файл не найден: {path}")
+    qa_root: Path | None = None
+    for parent in path.parents:
+        if parent.name == ".qa":
+            qa_root = parent
+            break
+    if qa_root is None:
+        raise QaPathError("Вложение можно загружать только из файла внутри каталога .qa.")
+    try:
+        path.relative_to(qa_root)
+    except ValueError as exc:
+        raise QaPathError("Путь вложения выходит за каталог .qa.") from exc
+    return path
+
+
 def resolve_qa_log_dir(qa_root: str) -> Path:
     root = Path(qa_root).expanduser().resolve()
     if root.name != ".qa":

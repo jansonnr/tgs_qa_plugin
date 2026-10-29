@@ -222,7 +222,21 @@ def update_settings(
     if project_id is not None and str(project_id).strip():
         settings.project_id = str(project_id).strip()
     if wiki_url is not None:
-        settings.wiki_url = wiki_url.strip().rstrip("/")
+        stripped = wiki_url.strip().rstrip("/")
+        if stripped:
+            new_wiki_origin = origin_of(stripped)
+            current_wiki_origin = origin_of(settings.wiki_url_resolved())
+            if new_wiki_origin != current_wiki_origin:
+                if new_wiki_origin not in trusted_origins():
+                    raise ConfigError(
+                        "Смена wiki origin отклонена: хоста нет в ZEPHYR_TRUSTED_ORIGINS. "
+                        "Прежний wiki-токен не переносится."
+                    )
+                if wiki_bearer_token is None:
+                    settings.wiki_bearer_token = ""
+            settings.wiki_url = stripped
+        else:
+            settings.wiki_url = ""
     _write_file(settings)
     return settings
 

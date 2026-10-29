@@ -18,6 +18,15 @@ def test_token_rejects_wrong_plan_hash() -> None:
     assert store.consume(token, plan_hash="plan-b") is None
 
 
+def test_resume_requires_consumed_token() -> None:
+    store = ApplyTokenStore()
+    token, _ = store.issue(plan_hash="plan-a", ttl_seconds=120)
+    assert store.authorize_resume(token, plan_hash="plan-a") is False
+    assert store.consume(token, plan_hash="plan-a") is not None
+    assert store.authorize_resume(token, plan_hash="plan-a") is True
+    assert store.authorize_resume(token, plan_hash="plan-b") is False
+
+
 def test_token_expires() -> None:
     store = ApplyTokenStore()
     token, expires_at = store.issue(plan_hash="x", ttl_seconds=60)

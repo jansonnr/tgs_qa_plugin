@@ -75,6 +75,7 @@ class ConfluenceClient:
         return text
 
     def get_page(self, page_id_or_url: str, *, max_depth: int = 0, text_offset: int = 0) -> dict[str, Any]:
+        self.link_warnings = []
         page_id = extract_page_id(page_id_or_url)
         if not page_id:
             raise ConfluenceClientError(

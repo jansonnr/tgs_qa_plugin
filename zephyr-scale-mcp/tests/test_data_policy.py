@@ -4,7 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from zephyr_scale_mcp.data_policy import redact_operations, resolve_qa_log_dir, scan_plan, to_agent
+from zephyr_scale_mcp.data_policy import (
+    QaPathError,
+    redact_operations,
+    resolve_attachment_path,
+    resolve_qa_log_dir,
+    scan_plan,
+    to_agent,
+)
 from zephyr_scale_mcp.plan_rules import PlanRejected, validate_plan
 
 
@@ -36,6 +43,17 @@ def test_confirmed_secret_stays_in_the_operation() -> None:
     plan["secret_decisions"] = {finding_id: "confirm"}
     validate_plan(plan)
     assert redact_operations(plan)[0]["name"] == "token=supersecretvalue"
+
+
+def test_attachment_path_must_live_under_qa(tmp_path: Path) -> None:
+    outside = tmp_path / "secret.txt"
+    outside.write_text("x", encoding="utf-8")
+    with pytest.raises(QaPathError):
+        resolve_attachment_path(str(outside))
+    allowed = tmp_path / ".qa" / "attachments" / "shot.png"
+    allowed.parent.mkdir(parents=True)
+    allowed.write_bytes(b"png")
+    assert resolve_attachment_path(str(allowed)) == allowed.resolve()
 
 
 def test_qa_log_dir_rejects_paths_outside_qa(tmp_path: Path) -> None:

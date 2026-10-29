@@ -104,6 +104,25 @@ def test_c22_origin_change_drops_token(monkeypatch: pytest.MonkeyPatch, tmp_path
     assert config.get_settings().bearer_token == ""
 
 
+def test_wiki_origin_change_requires_trusted_origins(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    import zephyr_scale_mcp.config as config
+
+    monkeypatch.setattr(config, "_runtime", None)
+    monkeypatch.setattr(config, "config_dir", lambda: tmp_path)
+    monkeypatch.setenv("ZEPHYR_TRUSTED_ORIGINS", "https://track.example,https://evil.example")
+    update_settings(
+        base_url="https://track.example/soft",
+        wiki_bearer_token="wiki-token-value",
+    )
+    monkeypatch.delenv("ZEPHYR_TRUSTED_ORIGINS", raising=False)
+    with pytest.raises(ConfigError):
+        update_settings(wiki_url="https://evil.example/wiki")
+    assert config.get_settings().wiki_bearer_token == "wiki-token-value"
+    monkeypatch.setenv("ZEPHYR_TRUSTED_ORIGINS", "https://evil.example")
+    update_settings(wiki_url="https://evil.example/wiki")
+    assert config.get_settings().wiki_bearer_token == ""
+
+
 def test_c02_pem_and_bearer_are_fully_masked() -> None:
     first = "-----BEGIN PRIVATE KEY-----\nFAKE_BODY_A\n-----END PRIVATE KEY-----"
     second = "-----BEGIN PRIVATE KEY-----\nFAKE_BODY_B\n-----END PRIVATE KEY-----"
