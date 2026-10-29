@@ -1,0 +1,19 @@
+{
+  "name": "jansonnr-tgs-qa-plugin",
+  "displayName": "TGS QA Plugin",
+  "owner": {
+    "name": "Nelli"
+  },
+  "metadata": {
+    "description": "Team marketplace: QA materials, doc review, test cases, Zephyr dedupe and apply.",
+    "version": "0.3.6",
+    "pluginRoot": "plugins"
+  },
+  "plugins": [
+    {
+      "name": "tgs-qa-cursor",
+      "source": "tgs-qa-cursor",
+      "description": "QA in Cursor: materials, doc review, test cases, anchors, dedupe, Zephyr apply via MCP"
+    }
+  ]
+}

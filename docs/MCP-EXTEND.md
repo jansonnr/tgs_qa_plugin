@@ -1,6 +1,6 @@
 # Расширение MCP `user-zephyr-scale` (MVP)
 
-Исходники MCP — каталог [`zephyr-scale-mcp/`](../zephyr-scale-mcp/) в этом репозитории; Cursor запускает их из корневого `mcp.json`. Для E2E по [ACCEPTANCE-E2E.md](ACCEPTANCE-E2E.md) в том же MCP нужны tools.
+Исходники MCP — каталог [`plugins/tgs-qa-cursor/zephyr-scale-mcp/`](../plugins/tgs-qa-cursor/zephyr-scale-mcp/); Cursor запускает их из `plugins/tgs-qa-cursor/mcp.json`. Для E2E по [ACCEPTANCE-E2E.md](ACCEPTANCE-E2E.md) в том же MCP нужны tools.
 
 Ответственность и границы гарантии — [REQUIREMENTS.md](REQUIREMENTS.md) §2.1.
 Способ поиска по якорям, страницы вложенных папок и `id` шагов при update здесь **не** задаются (ревью п. 1).
@@ -42,7 +42,7 @@
 ### `list_folder_test_cases`
 
 - Input: `project_key`, `folder_id`, pagination (`startAt`, `maxResults` ≤ разумного, e.g. 50).
-- Output: список summary полей как в [schemas/zephyr-index.example.json](../schemas/zephyr-index.example.json) — **без** полного testScript.
+- Output: список summary полей как в [schemas/zephyr-index.example.json](../plugins/tgs-qa-cursor/schemas/zephyr-index.example.json) — **без** полного testScript.
 - Полнота обхода страниц и вложенных папок — открытый вопрос ревью п. 1. Пока выгрузка не закончена или агент не уверен, index помечается `"complete": false`.
 
 ### `update_test_case`

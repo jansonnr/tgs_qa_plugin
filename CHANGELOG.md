@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.6
+
+- Структура **team marketplace**: `.cursor-plugin/marketplace.json`, плагин в `plugins/tgs-qa-cursor/`.
+
 ## 0.3.5
 
 - MCP Zephyr Scale перенесён в `zephyr-scale-mcp/`; подключение через корневой `mcp.json` и `plugin.json` (`mcpServers`).

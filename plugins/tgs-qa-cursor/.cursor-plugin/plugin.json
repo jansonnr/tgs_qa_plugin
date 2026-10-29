@@ -1,7 +1,8 @@
 {
   "name": "tgs-qa-cursor",
+  "displayName": "TGS QA Cursor",
   "description": "QA in Cursor: materials, doc review, test cases, anchors, dedupe, Zephyr apply",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "mcpServers": "./mcp.json",
   "license": "MIT",
   "repository": "https://github.com/jansonnr/tgs_qa_plugin",
