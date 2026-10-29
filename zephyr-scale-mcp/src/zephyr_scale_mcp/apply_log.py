@@ -19,6 +19,7 @@ _LOG_FIELDS = (
     "error",
     "retry_after",
     "already_applied",
+    "op_hash",
 )
 
 
@@ -45,18 +46,35 @@ class ApplyBusy(RuntimeError):
 def _pid_alive(pid: int) -> bool:
     if pid <= 0:
         return False
+    if os.name == "nt":
+        return _windows_pid_alive(pid)
     try:
         os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
     except OSError:
         return False
     return True
+
+
+def _windows_pid_alive(pid: int) -> bool:
+    import ctypes
+
+    kernel = ctypes.windll.kernel32
+    handle = kernel.OpenProcess(0x1000, False, pid)
+    if handle:
+        kernel.CloseHandle(handle)
+        return True
+    return kernel.GetLastError() == 5
 
 
 def _lock_is_stale(path: Path) -> bool:
     try:
         pid = int(path.read_text(encoding="utf-8").strip() or "0")
     except (OSError, ValueError):
-        return True
+        return False
     return not _pid_alive(pid)
 
 
@@ -70,7 +88,10 @@ def hold_apply_lock(plan_hash: str, root: Path | None = None) -> Iterator[None]:
             fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
             if _lock_is_stale(path):
-                path.unlink(missing_ok=True)
+                try:
+                    path.unlink()
+                except PermissionError:
+                    raise ApplyBusy(plan_hash) from None
                 continue
             raise ApplyBusy(plan_hash) from None
         os.write(fd, str(os.getpid()).encode())
@@ -84,17 +105,29 @@ def hold_apply_lock(plan_hash: str, root: Path | None = None) -> Iterator[None]:
         path.unlink(missing_ok=True)
 
 
-def latest_apply_entries(plan_hash: str, root: Path | None = None) -> dict[tuple[str, str], dict[str, Any]]:
+def latest_apply_entries(plan_hash: str, root: Path | None = None) -> tuple[dict[tuple[str, str], dict[str, Any]], bool]:
     path = apply_log_path(plan_hash, root)
     found: dict[tuple[str, str], dict[str, Any]] = {}
+    corrupt = False
     if not path.is_file():
-        return found
+        return found, corrupt
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
-        entry = json.loads(line)
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            corrupt = True
+            continue
+        if not isinstance(entry, dict):
+            corrupt = True
+            continue
         case_id = str(entry.get("case_id") or "")
         action = str(entry.get("action") or "")
-        if case_id and action:
-            found[(case_id, action)] = entry
-    return found
+        if not case_id or not action:
+            continue
+        previous = found.get((case_id, action))
+        if previous and previous.get("status") in {"success", "unknown", "started"} and entry.get("status") == "not_run":
+            continue
+        found[(case_id, action)] = entry
+    return found, corrupt

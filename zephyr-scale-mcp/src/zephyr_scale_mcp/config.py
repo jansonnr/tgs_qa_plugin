@@ -4,6 +4,7 @@ import json
 import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 ENV_BASE_URL = "ZEPHYR_BASE_URL"
@@ -12,6 +13,7 @@ ENV_WIKI_TOKEN = "ZEPHYR_WIKI_BEARER_TOKEN"
 ENV_PROJECT_KEY = "ZEPHYR_PROJECT_KEY"
 ENV_PROJECT_ID = "ZEPHYR_PROJECT_ID"
 ENV_WIKI_URL = "ZEPHYR_WIKI_URL"
+ENV_TRUSTED_ORIGINS = "ZEPHYR_TRUSTED_ORIGINS"
 
 DEFAULT_BASE_URL = "https://track.astral.ru/soft"
 DEFAULT_PROJECT_KEY = "QA"
@@ -162,6 +164,31 @@ def get_settings() -> Settings:
     return _runtime
 
 
+def origin_of(url: str) -> str:
+    """https-origin без пути. http, логин, query и fragment отклоняются."""
+    parts = urlsplit((url or "").strip())
+    if parts.scheme != "https" or not parts.hostname:
+        raise ConfigError("Адрес подключения должен быть https и содержать хост.")
+    if parts.username or parts.password or parts.query or parts.fragment:
+        raise ConfigError("В адресе не допускаются логин, query и fragment.")
+    host = parts.hostname.lower()
+    if parts.port:
+        host = f"{host}:{parts.port}"
+    return f"https://{host}"
+
+
+def trusted_origins() -> set[str]:
+    """Список задаётся окружением, не аргументом tool."""
+    raw = os.environ.get(ENV_TRUSTED_ORIGINS) or ""
+    found: set[str] = set()
+    for item in raw.split(","):
+        text = item.strip()
+        if not text:
+            continue
+        found.add(origin_of(text))
+    return found
+
+
 def update_settings(
     *,
     bearer_token: str | None = None,
@@ -177,7 +204,19 @@ def update_settings(
     if wiki_bearer_token is not None:
         settings.wiki_bearer_token = wiki_bearer_token.strip()
     if base_url is not None and base_url.strip():
-        settings.base_url = base_url.rstrip("/")
+        normalized = base_url.strip().rstrip("/")
+        new_origin = origin_of(normalized)
+        current_origin = origin_of(settings.base_url)
+        if new_origin != current_origin:
+            if new_origin not in trusted_origins():
+                raise ConfigError(
+                    "Смена origin отклонена: хоста нет в ZEPHYR_TRUSTED_ORIGINS. Прежний токен не переносится."
+                )
+            if bearer_token is None:
+                settings.bearer_token = ""
+            if wiki_bearer_token is None:
+                settings.wiki_bearer_token = ""
+        settings.base_url = normalized
     if project_key is not None and project_key.strip():
         settings.project_key = project_key.strip()
     if project_id is not None and str(project_id).strip():

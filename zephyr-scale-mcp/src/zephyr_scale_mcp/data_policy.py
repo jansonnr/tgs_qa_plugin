@@ -8,8 +8,19 @@ from typing import Any
 MAX_AGENT_STRING = 4000
 
 _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("bearer", re.compile(r"Bearer\s+[A-Za-z0-9._\-]{20,}", re.IGNORECASE)),
-    ("private_key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
+    (
+        "private_key",
+        re.compile(
+            r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"
+            r"|-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]+\Z"
+        ),
+    ),
+    (
+        "bearer",
+        re.compile(
+            r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]{20,}={0,2}(?![A-Za-z0-9._~+/=-])"
+        ),
+    ),
     ("aws_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
     (
         "assigned_secret",
@@ -59,6 +70,31 @@ def mask_secrets(text: str) -> tuple[str, int]:
         masked, replaced = pattern.subn("[secret]", masked)
         count += replaced
     return masked, count
+
+
+def page_text(text: str, *, offset: int = 0, limit: int = MAX_AGENT_STRING) -> dict[str, Any]:
+    """Порция текста для агента. complete=false значит, что хвост ещё не прочитан."""
+    masked, masked_count = mask_secrets(text)
+    start = max(0, offset)
+    complete = start >= len(masked)
+    if complete:
+        shown = ""
+        next_offset = len(masked)
+    elif len(masked) - start > limit:
+        shown = masked[start : start + limit - 1] + "…"
+        next_offset = start + limit - 1
+        complete = False
+    else:
+        shown = masked[start:]
+        next_offset = len(masked)
+        complete = True
+    return {
+        "text": shown,
+        "next_offset": next_offset,
+        "complete": complete,
+        "secrets_masked": masked_count,
+        "original_chars": len(text),
+    }
 
 
 def sanitize_text(text: str, *, limit: int = 300) -> str:
@@ -180,7 +216,10 @@ def _walk(value: Any) -> tuple[Any, dict[str, int]]:
         masked, masked_count = mask_secrets(value)
         original = len(value)
         truncated = 1 if len(masked) > MAX_AGENT_STRING else 0
-        shown = masked[:MAX_AGENT_STRING]
+        if truncated:
+            shown = masked[: MAX_AGENT_STRING - 1] + "…"
+        else:
+            shown = masked
         return shown, {
             "original_chars": original,
             "returned_chars": len(shown),

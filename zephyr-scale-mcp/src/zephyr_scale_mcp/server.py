@@ -23,16 +23,18 @@ from zephyr_scale_mcp.apply_gate import (
 )
 from zephyr_scale_mcp.plan_rules import (
     PlanRejected,
+    adapt_plan,
     expand_folder_scope,
     folder_query,
     match_candidates,
     plan_hash,
+    run_log_key,
     sync_folder_index,
     validate_plan,
 )
 from zephyr_scale_mcp.client import ZephyrClient
 from zephyr_scale_mcp.confluence import ConfluenceClient
-from zephyr_scale_mcp.config import ConfigError, get_settings, update_settings
+from zephyr_scale_mcp.config import ConfigError, get_settings, origin_of, update_settings
 
 mcp = MCPServer(
     "zephyr-scale",
@@ -73,6 +75,22 @@ def _apply_payload(plan_hash_value: str, run_id: str | None, results: list[dict[
         "log_path": str(apply_log_path(plan_hash_value)),
         "results": results,
     }
+
+
+def _prepared_plan(plan: dict[str, Any]) -> dict[str, Any]:
+    adapted = adapt_plan(plan)
+    validate_plan(adapted)
+    return adapted
+
+
+def _plan_target(plan: dict[str, Any]) -> dict[str, str]:
+    settings = get_settings()
+    project = settings.project_key
+    for operation in plan.get("operations") or []:
+        if isinstance(operation, dict) and str(operation.get("project_key") or "").strip():
+            project = str(operation["project_key"]).strip()
+            break
+    return {"origin": origin_of(settings.base_url), "project_key": project}
 
 
 def _execution_plan(plan: dict[str, Any]) -> tuple[list[dict[str, Any]], Any]:
@@ -162,8 +180,9 @@ def prepare_apply(
     case_id — внутренний id черновика. Сервер сам считает plan_hash; правка плана делает token недействительным.
     """
     try:
-        validate_plan(plan)
-        digest = plan_hash(plan)
+        adapted = _prepared_plan(plan)
+        target = _plan_target(adapted)
+        digest = plan_hash(adapted, target=target)
         token, expires_at = get_apply_token_store().issue(
             plan_hash=digest,
             run_id=run_id,
@@ -180,6 +199,8 @@ def prepare_apply(
         )
     except PlanRejected as exc:
         return _dumps({"ok": False, "code": exc.code, "error": exc.message})
+    except ConfigError as exc:
+        return _dumps({"ok": False, "code": "CONFIG", "error": str(exc)})
     except ValueError as exc:
         return _dumps({"ok": False, "error": str(exc)})
 
@@ -198,12 +219,17 @@ def apply_plan(apply_token: str, plan: dict[str, Any]) -> str:
     Повторный create после unknown не выполняется: вызови resume_apply для продолжения.
     """
     try:
-        operations, workspace_log = _execution_plan(plan)
+        adapted = _prepared_plan(plan)
+        operations, workspace_log = _execution_plan(adapted)
+        target = _plan_target(adapted)
     except PlanRejected as exc:
         return _dumps({"ok": False, "code": exc.code, "error": exc.message})
-    digest = plan_hash(plan)
+    except ConfigError as exc:
+        return _dumps({"ok": False, "code": "CONFIG", "error": str(exc)})
+    digest = plan_hash(adapted, target=target)
+    log_key = run_log_key(adapted, origin=target["origin"], project_key=target["project_key"])
     try:
-        with hold_apply_lock(digest):
+        with hold_apply_lock(log_key):
             record = get_apply_token_store().consume(apply_token, plan_hash=digest)
             if record is None:
                 return _dumps(
@@ -218,10 +244,10 @@ def apply_plan(apply_token: str, plan: dict[str, Any]) -> str:
                 results = execute_plan_operations(
                     _client(),
                     operations,
-                    plan_hash=digest,
+                    plan_hash=log_key,
                     workspace_log_root=workspace_log,
                 )
-                return _apply_payload(digest, record.run_id, results)
+                return _apply_payload(log_key, record.run_id, results)
 
             return _call(lambda: _run())
     except ApplyBusy:
@@ -245,29 +271,35 @@ def resume_apply(plan: dict[str, Any]) -> str:
     Новый apply_token не нужен: план тот же, hash должен совпасть с журналом.
     """
     try:
-        operations, workspace_log = _execution_plan(plan)
+        adapted = _prepared_plan(plan)
+        operations, workspace_log = _execution_plan(adapted)
+        target = _plan_target(adapted)
     except PlanRejected as exc:
         return _dumps({"ok": False, "code": exc.code, "error": exc.message})
-    digest = plan_hash(plan)
-    if not apply_log_path(digest).is_file():
+    except ConfigError as exc:
+        return _dumps({"ok": False, "code": "CONFIG", "error": str(exc)})
+    log_key = run_log_key(adapted, origin=target["origin"], project_key=target["project_key"])
+    if not apply_log_path(log_key).is_file() and not (
+        workspace_log is not None and apply_log_path(log_key, workspace_log).is_file()
+    ):
         return _dumps(
             {
                 "ok": False,
                 "code": "APPLY_NOT_STARTED",
-                "error": "Для этого плана нет журнала. Сначала нужен подтверждённый apply_plan.",
+                "error": "Для этого запуска нет журнала. Сначала нужен подтверждённый apply_plan.",
             }
         )
     try:
-        with hold_apply_lock(digest):
+        with hold_apply_lock(log_key):
 
             def _run() -> dict[str, Any]:
                 results = execute_plan_operations(
                     _client(),
                     operations,
-                    plan_hash=digest,
+                    plan_hash=log_key,
                     workspace_log_root=workspace_log,
                 )
-                return _apply_payload(digest, plan.get("run_id"), results)
+                return _apply_payload(log_key, adapted.get("run_id"), results)
 
             return _call(lambda: _run())
     except ApplyBusy:
@@ -301,9 +333,18 @@ def sync_testcase_index(
     def _run() -> dict[str, Any]:
         client = _client()
         settings = get_settings()
+        selected_project = project_key or settings.project_key
         scope = list(folder_ids)
         if include_subfolders:
-            tree = client.get_folder_tree()
+            if selected_project != settings.project_key or not str(settings.project_id or "").strip():
+                return {
+                    "ok": False,
+                    "search_status": "index_incomplete",
+                    "complete": False,
+                    "items": [],
+                    "error": "Нельзя обойти подпапки: id проекта не разрешён для выбранного project_key.",
+                }
+            tree = client.get_folder_tree(settings.project_id)
             if tree.get("ok") is not True:
                 return {
                     "ok": False,
@@ -313,7 +354,7 @@ def sync_testcase_index(
                     "error": tree.get("data") or tree.get("error"),
                 }
             scope = expand_folder_scope(tree.get("data"), folder_ids, include_subfolders=True)
-        query = folder_query(project_key or settings.project_key, scope)
+        query = folder_query(selected_project, scope)
         indexed = sync_folder_index(
             lambda tql, page_size, start_at: client.search_test_cases(
                 query=tql,
@@ -582,16 +623,18 @@ def get_folder_tree(project_id: str | None = None) -> str:
 def get_confluence_page(
     page_id_or_url: str,
     include_linked_pages: bool = False,
+    text_offset: int = 0,
 ) -> str:
     """Прочитать страницу Confluence и вернуть Markdown.
 
     page_id_or_url — числовой pageId или URL вида
     https://.../pages/viewpage.action?pageId=123456.
     include_linked_pages=true подгружает страницы, на которые есть ссылки внутри текста.
+    text_offset — продолжение усечённого текста. content_complete=false значит, что страница прочитана не до конца.
     Использует GET /rest/api/content/{pageId}?expand=body.storage.
     """
     max_depth = 1 if include_linked_pages else 0
-    return _call(_confluence().get_page, page_id_or_url, max_depth=max_depth)
+    return _call(_confluence().get_page, page_id_or_url, max_depth=max_depth, text_offset=text_offset)
 
 
 def main() -> None:

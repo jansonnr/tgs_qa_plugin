@@ -10,6 +10,7 @@ import httpx
 from bs4 import BeautifulSoup, NavigableString, PageElement, Tag
 
 from zephyr_scale_mcp.config import ConfigError, Settings, get_settings
+from zephyr_scale_mcp.data_policy import page_text
 
 
 class ConfluenceClientError(RuntimeError):
@@ -47,6 +48,7 @@ class ConfluenceClient:
         self.settings = settings or get_settings()
         self._base_url = self.settings.wiki_url_resolved()
         self._http = httpx.Client(timeout=60.0, follow_redirects=True)
+        self.link_warnings: list[str] = []
 
     def fetch_page(self, page_id: str) -> ConfluencePage:
         data = self._http_get(
@@ -64,38 +66,54 @@ class ConfluenceClient:
                     continue
                 try:
                     sub = self.fetch_page(linked)
-                except ConfluenceClientError:
+                except ConfluenceClientError as exc:
+                    self.link_warnings.append(f"Страница {linked} не загружена: {exc}")
+                    text += f"\n\n--- Связанная страница {linked} не загружена ---\n"
                     continue
                 text += f"\n\n--- Связанная страница: {sub.title} ---\n"
                 text += html_to_markdown(sub.body_html)
         return text
 
-    def get_page(self, page_id_or_url: str, *, max_depth: int = 0) -> dict[str, Any]:
+    def get_page(self, page_id_or_url: str, *, max_depth: int = 0, text_offset: int = 0) -> dict[str, Any]:
         page_id = extract_page_id(page_id_or_url)
         if not page_id:
             raise ConfluenceClientError(
                 "Укажи числовой pageId или URL Confluence с параметром pageId=..."
             )
         page = self.fetch_page(page_id)
+        full_text = self.page_to_text(page, max_depth=max_depth)
+        portion = page_text(full_text, offset=text_offset)
         return {
             "ok": True,
             "page_id": page.page_id,
             "title": page.title,
-            "content_markdown": self.page_to_text(page, max_depth=max_depth),
+            "content_markdown": portion["text"],
+            "content_complete": portion["complete"],
+            "next_offset": portion["next_offset"],
+            "link_warnings": list(self.link_warnings),
             "url": f"{self._base_url}/pages/viewpage.action?pageId={page.page_id}",
         }
 
-    def _lookup_page_id_by_title(self, title: str) -> str | None:
+    def _lookup_page_id_by_title(self, title: str, space_key: str | None = None) -> str | None:
+        if not space_key:
+            self.link_warnings.append(f"Ссылка «{title}» без space-key не разрешается.")
+            return None
         escaped_title = title.replace("\\", "\\\\").replace('"', '\\"')
+        escaped_space = space_key.replace("\\", "\\\\").replace('"', '\\"')
+        cql = f'type=page AND space="{escaped_space}" AND title="{escaped_title}"'
         try:
             results = self._http_get(
                 f"{self._base_url}/rest/api/search",
-                params={"cql": f'type=page AND title="{escaped_title}"', "limit": 1},
+                params={"cql": cql, "limit": 2},
             )
-        except ConfluenceClientError:
+        except ConfluenceClientError as exc:
+            self.link_warnings.append(f"Поиск «{title}» в пространстве {space_key} не выполнен: {exc}")
             return None
         items = results.get("results") or []
-        if not items:
+        if len(items) != 1:
+            self.link_warnings.append(
+                f"Ссылка «{title}» в пространстве {space_key} неоднозначна или не найдена ({len(items)})."
+            )
             return None
         content = items[0].get("content") or {}
         page_id = content.get("id")
@@ -132,7 +150,7 @@ class ConfluenceClient:
 def extract_linked_page_ids(
     html_or_text: str,
     *,
-    lookup: Callable[[str], str | None] | None = None,
+    lookup: Callable[..., str | None] | None = None,
 ) -> Iterator[str]:
     seen: set[str] = set()
     for match in re.finditer(r"pageId=(\d+)", html_or_text):
@@ -144,9 +162,10 @@ def extract_linked_page_ids(
     soup = BeautifulSoup(html_or_text, "lxml")
     for tag in soup.find_all("ri:page"):
         title = attribute_text(tag, "ri:content-title")
+        space_key = attribute_text(tag, "ri:space-key") or None
         if not title or lookup is None:
             continue
-        page_id = lookup(title)
+        page_id = lookup(title, space_key)
         if page_id and page_id not in seen:
             seen.add(page_id)
             yield page_id

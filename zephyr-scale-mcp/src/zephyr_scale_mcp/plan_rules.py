@@ -98,12 +98,93 @@ def validate_plan(plan: dict[str, Any]) -> None:
                     f"Несколько операций пишут в один кейс {target}: {previous} и {case_id}.",
                 )
             seen_targets[target] = case_id
+        _validate_operation_shape(operation, case_id, action)
     from zephyr_scale_mcp.data_policy import enforce_secret_decisions
 
     enforce_secret_decisions(plan)
 
 
-def plan_hash(plan: dict[str, Any]) -> str:
+def _validate_operation_shape(operation: dict[str, Any], case_id: str, action: str) -> None:
+    from zephyr_scale_mcp.keys import UnsafeKey, require_case_key
+
+    for field in ("status", "priority", "name", "objective", "precondition", "folder"):
+        if field in operation and operation[field] is not None and not isinstance(operation[field], str):
+            raise PlanRejected("PLAN_INVALID", f"У {case_id} поле {field} должно быть строкой.")
+    if "steps" in operation and operation["steps"] is not None:
+        steps = operation["steps"]
+        if not isinstance(steps, list) or any(not isinstance(step, dict) for step in steps):
+            raise PlanRejected(
+                "PLAN_INVALID",
+                f"У {case_id} steps — список объектов с description, а не строк.",
+            )
+    if action in {"update", "delete"}:
+        try:
+            require_case_key(operation.get("test_case_key"))
+        except UnsafeKey as exc:
+            raise PlanRejected("PLAN_INVALID", str(exc)) from exc
+
+
+_STATUS_ALIASES = {
+    "complete": "ok",
+    "incomplete": "index_incomplete",
+    "error": "api_error",
+}
+
+
+def adapt_plan(plan: dict[str, Any]) -> dict[str, Any]:
+    """Приводит пример dedupe-plan и черновик к контракту validate_plan."""
+    if not isinstance(plan, dict):
+        return plan
+    adapted = dict(plan)
+    status = adapted.get("search_status")
+    if isinstance(status, str) and status in _STATUS_ALIASES:
+        adapted["search_status"] = _STATUS_ALIASES[status]
+    if not isinstance(adapted.get("operations"), list):
+        items = adapted.get("items")
+        if isinstance(items, list):
+            adapted["operations"] = [_adapt_item(item) for item in items]
+    else:
+        adapted["operations"] = [_adapt_item(item) for item in adapted["operations"]]
+    return adapted
+
+
+def adapt_draft_steps(case: dict[str, Any]) -> list[dict[str, Any]]:
+    steps = case.get("steps") or []
+    if not isinstance(steps, list):
+        return []
+    if steps and isinstance(steps[0], dict):
+        return [step for step in steps if isinstance(step, dict)]
+    data = case.get("test_data") or []
+    expected = case.get("expected_results") or []
+    structured: list[dict[str, Any]] = []
+    for index, description in enumerate(steps):
+        item: dict[str, Any] = {"description": str(description)}
+        if index < len(data) and data[index] not in (None, "", "—"):
+            item["testData"] = data[index]
+        if index < len(expected) and expected[index] is not None:
+            item["expectedResult"] = expected[index]
+        structured.append(item)
+    return structured
+
+
+def _adapt_item(item: Any) -> Any:
+    if not isinstance(item, dict):
+        return item
+    operation = dict(item)
+    if not operation.get("case_id") and operation.get("draft_id"):
+        operation["case_id"] = str(operation["draft_id"])
+    if not operation.get("name") and operation.get("draft_name"):
+        operation["name"] = operation["draft_name"]
+    if not operation.get("test_case_key") and operation.get("target_key"):
+        operation["test_case_key"] = operation["target_key"]
+    if isinstance(operation.get("steps"), list) and operation["steps"] and isinstance(operation["steps"][0], str):
+        operation["steps"] = adapt_draft_steps(operation)
+    if operation.get("precondition") is None and isinstance(operation.get("preconditions"), list):
+        operation["precondition"] = "\n".join(str(line) for line in operation["preconditions"])
+    return operation
+
+
+def plan_hash(plan: dict[str, Any], *, target: dict[str, str] | None = None) -> str:
     operations = []
     for operation in plan.get("operations") or []:
         if isinstance(operation, dict):
@@ -111,14 +192,46 @@ def plan_hash(plan: dict[str, Any]) -> str:
     canonical = {
         "draft_revision": plan.get("draft_revision"),
         "search_status": plan.get("search_status"),
+        "run_id": plan.get("run_id"),
+        "qa_root": plan.get("qa_root"),
         "secret_decisions": plan.get("secret_decisions") or {},
         "operations": operations,
     }
+    if target is not None:
+        canonical["target"] = target
     raw = json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-def fingerprint_case(*, name: str | None, steps: list[dict[str, Any]] | None) -> str:
+def run_log_key(plan: dict[str, Any], *, origin: str, project_key: str) -> str:
+    """Журнал одного запуска. Не зависит от текста соседних операций."""
+    payload = {
+        "origin": origin,
+        "project_key": project_key,
+        "run_id": str(plan.get("run_id") or ""),
+        "qa_root": str(plan.get("qa_root") or ""),
+    }
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def operation_hash(operation: dict[str, Any]) -> str:
+    payload = {key: operation[key] for key in _HASH_FIELDS if key in operation}
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def fingerprint_case(
+    *,
+    name: str | None,
+    steps: list[dict[str, Any]] | None,
+    objective: str | None = None,
+    folder: str | None = None,
+    status: str | None = None,
+    priority: str | None = None,
+    precondition: str | None = None,
+    labels: list[Any] | None = None,
+) -> str:
     normalized: list[dict[str, Any]] = []
     for step in steps or []:
         normalized.append(
@@ -129,7 +242,16 @@ def fingerprint_case(*, name: str | None, steps: list[dict[str, Any]] | None) ->
                 "expectedResult": step.get("expectedResult", step.get("expected_result")),
             }
         )
-    payload = {"name": name or "", "steps": normalized}
+    payload = {
+        "name": name or "",
+        "objective": objective or "",
+        "folder": folder or "",
+        "status": status or "",
+        "priority": priority or "",
+        "precondition": precondition or "",
+        "labels": [str(label) for label in (labels or [])],
+        "steps": normalized,
+    }
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode()).hexdigest()
 
@@ -191,8 +313,30 @@ def merge_steps_for_update(
     return merged
 
 
-def _plain(value: Any) -> str:
-    return " ".join(str(value or "").split()).casefold()
+def _exact(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _same_published_value(draft: Any, remote: Any) -> bool:
+    left = _exact(draft)
+    right = _exact(remote)
+    if left == right:
+        return True
+    if left == "[secret]":
+        return True
+    if left.endswith("…") and right.startswith(left[:-1]):
+        return True
+    return False
+
+
+def _step_exact(step: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        _exact(step.get("description") or step.get("step")),
+        _exact(step.get("testData", step.get("test_data"))),
+        _exact(step.get("expectedResult", step.get("expected_result"))),
+    )
 
 
 def _steps_changed(remote_steps: list[dict[str, Any]], merged: list[dict[str, Any]]) -> bool:
@@ -201,7 +345,7 @@ def _steps_changed(remote_steps: list[dict[str, Any]], merged: list[dict[str, An
     for remote_step, draft_step in zip(remote_steps, merged, strict=True):
         if remote_step.get("id") != draft_step.get("id"):
             return True
-        if _step_text(remote_step) != _step_text(draft_step):
+        if _step_exact(remote_step) != _step_exact(draft_step):
             return True
     return False
 
@@ -211,10 +355,10 @@ def update_changes(operation: dict[str, Any], remote: dict[str, Any]) -> dict[st
     if not isinstance(data, dict):
         data = {}
     changes: dict[str, Any] = {}
-    for field in ("name", "objective", "folder", "status", "priority"):
+    for field in ("name", "objective", "folder", "status", "priority", "precondition"):
         if field not in operation or operation[field] is None:
             continue
-        if _plain(operation[field]) != _plain(data.get(field)):
+        if not _same_published_value(operation[field], data.get(field)):
             changes[field] = operation[field]
     if operation.get("labels") is not None:
         want = [str(x).strip() for x in operation["labels"] if str(x).strip()]
@@ -236,7 +380,17 @@ def fingerprint_from_response(response: dict[str, Any]) -> str:
         data = {}
     script = data.get("testScript") if isinstance(data.get("testScript"), dict) else {}
     steps = script.get("steps") if isinstance(script.get("steps"), list) else data.get("steps")
-    return fingerprint_case(name=data.get("name"), steps=steps if isinstance(steps, list) else [])
+    labels = data.get("labels") if isinstance(data.get("labels"), list) else []
+    return fingerprint_case(
+        name=data.get("name"),
+        steps=steps if isinstance(steps, list) else [],
+        objective=data.get("objective"),
+        folder=data.get("folder"),
+        status=data.get("status"),
+        priority=data.get("priority"),
+        precondition=data.get("precondition"),
+        labels=labels,
+    )
 
 
 def _tokens(text: str) -> set[str]:
@@ -264,31 +418,24 @@ def _phrase_score(phrases: list[str], item: dict[str, Any]) -> float:
     return best
 
 
-def _step_score(draft_steps: list[dict[str, Any]], candidate_steps: list[dict[str, Any]]) -> float:
+def _step_score(draft_steps: list[dict[str, Any]], candidate_steps: list[dict[str, Any]]) -> tuple[float, list[str]]:
+    """Сравнение по порядку, данным и ожидаемому результату. Перестановки не считаются тем же сценарием."""
     if not draft_steps or not candidate_steps:
-        return 0.0
-    used: set[int] = set()
+        return 0.0, []
+    notes: list[str] = []
+    if len(draft_steps) != len(candidate_steps):
+        notes.append("разная длина списка шагов")
     total = 0.0
-    for step in draft_steps:
-        left = _tokens(
-            f"{step.get('description') or ''} {step.get('expectedResult') or step.get('expected_result') or ''}"
-        )
-        best_index: int | None = None
-        best = 0.0
-        for index, other in enumerate(candidate_steps):
-            if index in used:
-                continue
-            right = _tokens(
-                f"{other.get('description') or ''} {other.get('expectedResult') or other.get('expected_result') or ''}"
-            )
-            score = _overlap(left, right)
-            if score > best:
-                best = score
-                best_index = index
-        if best_index is not None:
-            used.add(best_index)
-        total += best
-    return total / len(draft_steps)
+    limit = min(len(draft_steps), len(candidate_steps))
+    for index in range(limit):
+        if _step_exact(draft_steps[index]) == _step_exact(candidate_steps[index]):
+            total += 1.0
+            continue
+        notes.append(f"шаг {index + 1} отличается данными, ожиданием или текстом")
+        left = _tokens(" ".join(_step_exact(draft_steps[index])))
+        right = _tokens(" ".join(_step_exact(candidate_steps[index])))
+        total += min(_overlap(left, right), 0.99)
+    return total / max(len(draft_steps), len(candidate_steps)), notes
 
 
 def match_candidates(index_items: list[dict[str, Any]], cases: list[dict[str, Any]]) -> dict[str, Any]:
@@ -297,18 +444,26 @@ def match_candidates(index_items: list[dict[str, Any]], cases: list[dict[str, An
         phrases = [str(phrase) for phrase in (case.get("phrases") or []) if str(phrase).strip()]
         if not phrases and case.get("title"):
             phrases = [str(case["title"])]
+        if not phrases and case.get("name"):
+            phrases = [str(case["name"])]
+        case_id = case.get("case_id") or case.get("draft_id")
         ranked: list[dict[str, Any]] = []
+        step_notes: list[str] = []
         for item in index_items:
-            name_score = _phrase_score(phrases, item)
-            if name_score < HIGH_NAME_SCORE:
+            exact_name = any(_exact(phrase).casefold() == _exact(item.get("name")).casefold() for phrase in phrases)
+            name_score = max((_overlap(_tokens(phrase), _tokens(str(item.get("name") or ""))) for phrase in phrases), default=0.0)
+            if not exact_name and name_score < HIGH_NAME_SCORE:
                 continue
             row: dict[str, Any] = {
                 "key": item.get("key"),
                 "name": item.get("name"),
-                "name_score": round(name_score, 4),
+                "name_score": 1.0 if exact_name else round(name_score, 4),
             }
             if case.get("steps") and item.get("steps"):
-                row["step_score"] = round(_step_score(case["steps"], item["steps"]), 4)
+                score, notes = _step_score(case["steps"], item["steps"])
+                row["step_score"] = round(score, 4)
+                if notes and not step_notes:
+                    step_notes = notes
             ranked.append(row)
         ranked.sort(key=lambda row: (row["name_score"], row.get("step_score") or 0), reverse=True)
         shortlist = ranked[:MAX_CANDIDATES]
@@ -318,15 +473,18 @@ def match_candidates(index_items: list[dict[str, Any]], cases: list[dict[str, An
         else:
             best = shortlist[0]
             step_score = best.get("step_score")
-            if case.get("confirmed_skip") is True and step_score is not None and step_score >= SKIP_STEP_SCORE:
+            equivalent = step_score is not None and step_score >= SKIP_STEP_SCORE and not step_notes
+            if case.get("confirmed_skip") is True and equivalent:
                 suggestion = "skip"
-                note = "skip только при совпадении шагов и явном confirmed_skip."
+                note = "skip только при совпадении шагов, данных, ожиданий, порядка и явном confirmed_skip."
             else:
                 suggestion = "ask"
                 note = "Высокое совпадение по доступным полям. update или skip выбирает человек."
+                if step_notes:
+                    note = note + " Отличия: " + "; ".join(step_notes) + "."
         results.append(
             {
-                "case_id": case.get("case_id"),
+                "case_id": case_id,
                 "suggested_action": suggestion,
                 "note": note,
                 "candidates": shortlist,
@@ -335,19 +493,21 @@ def match_candidates(index_items: list[dict[str, Any]], cases: list[dict[str, An
     return {"ok": True, "results": results}
 
 
-def extract_search_page(response: dict[str, Any]) -> tuple[list[dict[str, Any]], int | None]:
+def extract_search_page(response: dict[str, Any]) -> tuple[list[dict[str, Any]] | None, int | None]:
     data = response.get("data")
     rows: list[Any]
     total: int | None = None
     if isinstance(data, list):
         rows = data
-    elif isinstance(data, dict):
+    elif isinstance(data, dict) and any(key in data for key in ("results", "values", "testCases", "total")):
         found = data.get("results") or data.get("values") or data.get("testCases") or []
-        rows = found if isinstance(found, list) else []
+        if not isinstance(found, list):
+            return None, None
+        rows = found
         if isinstance(data.get("total"), int):
             total = data["total"]
     else:
-        rows = []
+        return None, None
     items: list[dict[str, Any]] = []
     for row in rows:
         if not isinstance(row, dict):
@@ -437,13 +597,28 @@ def sync_folder_index(
                 "error": response.get("error") or response.get("data"),
             }
         rows, total = extract_search_page(response)
+        if rows is None:
+            return {
+                "ok": False,
+                "search_status": "api_error",
+                "complete": False,
+                "items": items,
+                "error": "Неизвестная схема ответа поиска. Это не пустой индекс.",
+            }
         items.extend(rows)
-        if not rows:
-            return {"ok": True, "search_status": "ok", "complete": True, "items": items, "total": total}
         start += len(rows)
         if total is not None and start >= total:
             return {"ok": True, "search_status": "ok", "complete": True, "items": items, "total": total}
-        if len(rows) < page_size:
+        if total is not None and start < total and len(rows) < page_size:
+            return {
+                "ok": False,
+                "search_status": "index_incomplete",
+                "complete": False,
+                "items": items,
+                "total": total,
+                "error": "Число элементов не сходится с total. Индекс неполный.",
+            }
+        if not rows or len(rows) < page_size:
             return {"ok": True, "search_status": "ok", "complete": True, "items": items, "total": total}
     return {
         "ok": True,
