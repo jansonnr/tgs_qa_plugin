@@ -3,13 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Literal
 
-from zephyr_scale_mcp.apply_log import append_apply_log, latest_apply_entries
+from zephyr_scale_mcp.apply_log import RECONCILED_ABSENT, append_apply_log, read_apply_log
 from zephyr_scale_mcp.client import ZephyrClient
 from zephyr_scale_mcp.config import ConfigError, origin_of
 from zephyr_scale_mcp.data_policy import sanitize_text
 from zephyr_scale_mcp.import_policy import import_labels_for_zephyr
 from zephyr_scale_mcp.keys import UnsafeKey
 from zephyr_scale_mcp.plan_rules import (
+    MaskedFieldEdit,
     effective_action,
     fingerprint_from_response,
     operation_hash,
@@ -17,7 +18,19 @@ from zephyr_scale_mcp.plan_rules import (
 )
 
 ApplyAction = Literal["create", "update", "delete", "skip"]
-_PROTECTED = {"success", "unknown", "started"}
+_NOT_SENT_ERRORS = (ConfigError, UnsafeKey, MaskedFieldEdit)
+_RECONCILE_ERROR = "Исход create неизвестен. Повторно кейс не создаётся: сверь с Zephyr через reconcile_apply."
+
+
+class _JournalUnavailable(Exception):
+    """Основной журнал не записался: продолжать пачку нельзя."""
+
+
+class _BatchStop(Exception):
+    def __init__(self, code: str, error: str) -> None:
+        super().__init__(error)
+        self.code = code
+        self.error = error
 
 
 def _op_status(result: dict[str, Any]) -> str:
@@ -53,87 +66,69 @@ def _precondition(operation: dict[str, Any]) -> str | None:
     return None
 
 
-def _remember(
-    entry: dict[str, Any],
-    plan_hash: str | None,
-    log_root: Path | None,
-    workspace_log_root: Path | None = None,
-) -> None:
-    if not plan_hash:
-        return
-    safe = dict(entry)
-    if isinstance(safe.get("error"), str):
-        safe["error"] = sanitize_text(safe["error"])
-    append_apply_log(plan_hash, safe, log_root)
-    if workspace_log_root is not None:
-        append_apply_log(plan_hash, safe, workspace_log_root)
+class _Journal:
+    def __init__(self, plan_hash: str | None, log_root: Path | None, workspace_log_root: Path | None) -> None:
+        self.plan_hash = plan_hash
+        self.log_root = log_root
+        self.workspace_log_root = workspace_log_root
+
+    def remember(self, entry: dict[str, Any]) -> None:
+        if not self.plan_hash:
+            return
+        safe = dict(entry)
+        if isinstance(safe.get("error"), str):
+            safe["error"] = sanitize_text(safe["error"])
+        try:
+            append_apply_log(self.plan_hash, safe, self.log_root)
+        except OSError as exc:
+            raise _JournalUnavailable(type(exc).__name__) from exc
+        if self.workspace_log_root is not None:
+            try:
+                append_apply_log(self.plan_hash, safe, self.workspace_log_root)
+            except OSError as exc:
+                entry["workspace_log_error"] = type(exc).__name__
+
+    def remember_quietly(self, entry: dict[str, Any]) -> None:
+        try:
+            self.remember(entry)
+        except _JournalUnavailable:
+            entry["log_error"] = "Журнал недоступен, запись не сохранена."
 
 
-def _prior_reusable(prior: dict[str, Any] | None, op_hash: str) -> dict[str, Any] | None:
-    if not prior:
-        return None
-    stored = prior.get("op_hash")
-    if stored and stored != op_hash and prior.get("status") != "not_run":
-        return None
-    return prior
-
-
-def _stop_remaining(
-    results: list[dict[str, Any]],
-    operations: list[dict[str, Any]],
-    start_index: int,
-    previous: dict[tuple[str, str], dict[str, Any]],
+def _history_decision(
+    prior: dict[str, Any] | None,
     *,
-    code: str,
-    error: str,
-    plan_hash: str | None,
-    log_root: Path | None,
-    workspace_log_root: Path | None,
-) -> list[dict[str, Any]]:
-    for index in range(start_index, len(operations)):
-        operation = operations[index]
-        action = effective_action(operation)
-        case_id = str(operation.get("case_id") or "")
-        op_hash = operation_hash(operation) if isinstance(operation, dict) else ""
-        prior = _prior_reusable(previous.get((case_id, action)), op_hash)
-        if prior and prior.get("status") == "success":
-            results.append(
-                {
-                    "op_index": index,
-                    "case_id": case_id,
-                    "action": action,
-                    "status": "success",
-                    "already_applied": True,
-                    "zephyr_key": prior.get("zephyr_key"),
-                    "op_hash": op_hash,
-                }
-            )
-            continue
-        if prior and prior.get("status") in {"unknown", "started"} and action == "create":
-            results.append(
-                {
-                    "op_index": index,
-                    "case_id": case_id,
-                    "action": action,
-                    "status": "unknown",
-                    "code": "RECONCILE_REQUIRED",
-                    "op_hash": op_hash,
-                    "error": "Исход create неизвестен. Повторно кейс не создаётся, нужна сверка с Zephyr.",
-                }
-            )
-            continue
-        pending = {
-            "op_index": index,
-            "case_id": case_id,
-            "action": action,
-            "status": "not_run",
-            "code": code,
-            "op_hash": op_hash,
-            "error": error,
+    action: str,
+    op_hash: str,
+    corrupt_lines: list[int],
+) -> dict[str, Any] | None:
+    """Результат по истории без обращения к Zephyr или None, если операцию можно отправлять."""
+    status = prior.get("status") if prior else None
+    stored_hash = prior.get("op_hash") if prior else None
+    if status == "success":
+        if not stored_hash or stored_hash == op_hash:
+            return {"status": "success", "already_applied": True, "zephyr_key": prior.get("zephyr_key")}
+        if action == "create":
+            return {
+                "status": "conflict",
+                "code": "ALREADY_CREATED",
+                "zephyr_key": prior.get("zephyr_key"),
+                "error": "Кейс уже создан по прежней версии строки. Повторный create не выполняется: "
+                "переведи строку в update этого ключа.",
+            }
+        return None
+    if action != "create":
+        return None
+    if status in {"unknown", "started"}:
+        return {"status": "unknown", "code": "RECONCILE_REQUIRED", "error": _RECONCILE_ERROR}
+    if corrupt_lines and (prior is None or int(prior.get("line") or 0) < max(corrupt_lines)):
+        lines = ", ".join(str(number) for number in corrupt_lines[:10])
+        return {
+            "status": "unknown",
+            "code": "RECONCILE_REQUIRED",
+            "error": f"Журнал повреждён (строки {lines}). Create не повторяется: сверь с Zephyr через reconcile_apply.",
         }
-        results.append(pending)
-        _remember(pending, plan_hash, log_root, workspace_log_root)
-    return results
+    return None
 
 
 def _local_precheck(client: ZephyrClient, operation: dict[str, Any], action: str) -> None:
@@ -142,14 +137,123 @@ def _local_precheck(client: ZephyrClient, operation: dict[str, Any], action: str
         settings.auth_header()
         origin_of(settings.base_url)
     if action == "create":
-        status = operation.get("status", "Draft")
-        priority = operation.get("priority", "Normal")
-        if status is None or priority is None or not isinstance(status, str) or not isinstance(priority, str):
-            raise UnsafeKey("status и priority должны быть строками.")
+        for field in ("status", "priority"):
+            value = operation.get(field, "Draft" if field == "status" else "Normal")
+            if not isinstance(value, str) or not value.strip():
+                raise UnsafeKey("status и priority должны быть непустыми строками.")
     steps = operation.get("steps")
     if steps is not None:
         if not isinstance(steps, list) or any(not isinstance(step, dict) for step in steps):
             raise UnsafeKey("steps должен быть списком объектов.")
+
+
+def _read_for_write(client: ZephyrClient, operation: dict[str, Any], entry: dict[str, Any]) -> dict[str, Any] | None:
+    """Свежий GET перед update/delete. None — запись делать нельзя, entry уже заполнен."""
+    remote = client.get_test_case(str(operation["test_case_key"]))
+    if remote.get("status_code") == 429 or remote.get("outcome") == "paused":
+        entry["status"] = "paused"
+        entry["retry_after"] = remote.get("retry_after")
+        raise _BatchStop("RATE_LIMITED", "Пачка остановлена: Zephyr ограничил частоту запросов.")
+    remote_status = _op_status(remote)
+    if remote_status == "auth":
+        entry["status"] = "failed"
+        entry["code"] = "AUTH_STOPPED"
+        entry["error"] = "Zephyr вернул 401 или 403."
+        raise _BatchStop("AUTH_STOPPED", "Пачка остановлена: Zephyr вернул 401 или 403.")
+    if remote_status != "success":
+        entry["status"] = remote_status
+        entry["error"] = remote.get("error") or f"Чтение кейса перед записью: Zephyr вернул {remote.get('status_code')}."
+        return None
+    if fingerprint_from_response(remote) != operation.get("baseline_fingerprint"):
+        entry["status"] = "conflict"
+        entry["error"] = "Кейс изменился после чтения для diff. Нужен новый preview."
+        return None
+    return remote
+
+
+def _send(client: ZephyrClient, operation: dict[str, Any], action: str, entry: dict[str, Any]) -> dict[str, Any] | None:
+    if action == "update":
+        remote = _read_for_write(client, operation, entry)
+        if remote is None:
+            return None
+        changes = update_changes(operation, remote)
+        if not changes:
+            entry["status"] = "success"
+            entry["code"] = "UNCHANGED"
+            return None
+        return client.update_test_case(str(operation["test_case_key"]), **changes)
+    if action == "delete":
+        if _read_for_write(client, operation, entry) is None:
+            return None
+        return client.delete_test_case(str(operation["test_case_key"]))
+    return client.create_test_case(
+        name=str(operation["name"]),
+        objective=operation.get("objective"),
+        precondition=_precondition(operation),
+        folder=operation.get("folder"),
+        status=str(operation.get("status", "Draft")),
+        priority=str(operation.get("priority", "Normal")),
+        project_key=operation.get("project_key"),
+        steps=operation.get("steps"),
+        labels=import_labels_for_zephyr(),
+    )
+
+
+def _finish(entry: dict[str, Any], action: str, result: dict[str, Any]) -> None:
+    if result.get("status_code") == 429 or result.get("outcome") == "paused":
+        entry["status"] = "paused"
+        entry["retry_after"] = result.get("retry_after")
+        raise _BatchStop("RATE_LIMITED", "Пачка остановлена: Zephyr ограничил частоту запросов.")
+    status = _op_status(result)
+    if status == "auth":
+        entry["status"] = "failed"
+        entry["code"] = "AUTH_STOPPED"
+        entry["error"] = "Zephyr вернул 401 или 403."
+        raise _BatchStop("AUTH_STOPPED", "Пачка остановлена: Zephyr вернул 401 или 403.")
+    if action == "create" and status == "success" and not _zephyr_key(result):
+        status = "unknown"
+        entry["code"] = "RECONCILE_REQUIRED"
+        entry["error"] = "Ответ create не содержит ключ кейса. Нужна сверка, повторный POST не выполняется."
+    entry["status"] = status
+    zephyr_key = _zephyr_key(result)
+    if zephyr_key:
+        entry["zephyr_key"] = zephyr_key
+    if result.get("retry_after") is not None:
+        entry["retry_after"] = result["retry_after"]
+    if status == "unknown" and "error" not in entry:
+        entry["error"] = result.get("error") or "Исход операции неизвестен."
+    elif status == "failed":
+        entry["error"] = result.get("error") or f"Zephyr вернул {result.get('status_code')}."
+
+
+def _stop_remaining(
+    results: list[dict[str, Any]],
+    operations: list[dict[str, Any]],
+    start_index: int,
+    previous: dict[tuple[str, str], dict[str, Any]],
+    corrupt_lines: list[int],
+    journal: _Journal,
+    *,
+    code: str,
+    error: str,
+) -> list[dict[str, Any]]:
+    for index in range(start_index, len(operations)):
+        operation = operations[index]
+        action = effective_action(operation)
+        case_id = str(operation.get("case_id") or "")
+        op_hash = operation_hash(operation)
+        entry: dict[str, Any] = {"op_index": index, "case_id": case_id, "action": action, "op_hash": op_hash}
+        decided = _history_decision(
+            previous.get((case_id, action)), action=action, op_hash=op_hash, corrupt_lines=corrupt_lines
+        )
+        if decided is not None:
+            entry.update(decided)
+            results.append(entry)
+            continue
+        entry.update({"status": "not_run", "code": code, "error": error})
+        results.append(entry)
+        journal.remember_quietly(entry)
+    return results
 
 
 def execute_plan_operations(
@@ -161,195 +265,95 @@ def execute_plan_operations(
     workspace_log_root: Path | None = None,
 ) -> list[dict[str, Any]]:
     previous: dict[tuple[str, str], dict[str, Any]] = {}
-    corrupt = False
+    corrupt_lines: list[int] = []
     if plan_hash:
-        previous, corrupt = latest_apply_entries(plan_hash, log_root)
+        previous, corrupt_lines = read_apply_log(plan_hash, log_root)
+    journal = _Journal(plan_hash, log_root, workspace_log_root)
     results: list[dict[str, Any]] = []
+
+    def stop(index: int, code: str, error: str) -> list[dict[str, Any]]:
+        return _stop_remaining(
+            results, operations, index + 1, previous, corrupt_lines, journal, code=code, error=error
+        )
+
     for index, operation in enumerate(operations):
         action = effective_action(operation)
         case_id = str(operation.get("case_id") or "")
         op_hash = operation_hash(operation)
         entry: dict[str, Any] = {"op_index": index, "case_id": case_id, "action": action, "op_hash": op_hash}
-        prior = _prior_reusable(previous.get((case_id, action)), op_hash)
-        if prior and prior.get("status") == "success":
-            entry["status"] = "success"
-            entry["already_applied"] = True
-            entry["zephyr_key"] = prior.get("zephyr_key")
+        if operation.get("test_case_key"):
+            entry["test_case_key"] = str(operation["test_case_key"])
+        decided = _history_decision(
+            previous.get((case_id, action)), action=action, op_hash=op_hash, corrupt_lines=corrupt_lines
+        )
+        if decided is not None:
+            entry.update(decided)
             results.append(entry)
             continue
-        if prior and prior.get("status") in {"unknown", "started"} and action == "create":
-            entry["status"] = "unknown"
-            entry["code"] = "RECONCILE_REQUIRED"
-            entry["error"] = "Исход create неизвестен. Повторно кейс не создаётся, нужна сверка с Zephyr."
+        if action == "skip":
+            entry["status"] = "skipped"
             results.append(entry)
-            _remember(entry, plan_hash, log_root, workspace_log_root)
+            journal.remember_quietly(entry)
             continue
-        if corrupt and action == "create":
-            entry["status"] = "unknown"
-            entry["code"] = "RECONCILE_REQUIRED"
-            entry["error"] = "Журнал повреждён. Create не повторяется, нужна сверка."
+        if action not in {"create", "update", "delete"}:
+            entry["status"] = "failed"
+            entry["error"] = f"Неизвестное action: {action!r}. Допустимо: create, update, delete, skip."
             results.append(entry)
-            _remember(entry, plan_hash, log_root, workspace_log_root)
+            journal.remember_quietly(entry)
             continue
         try:
             _local_precheck(client, operation, action)
-        except (ConfigError, UnsafeKey, ValueError) as exc:
-            entry["status"] = "not_sent"
-            entry["code"] = "NOT_SENT"
-            entry["error"] = str(exc)
+        except (*_NOT_SENT_ERRORS, ValueError) as exc:
+            entry.update({"status": "not_sent", "code": "NOT_SENT", "error": str(exc)})
             results.append(entry)
+            journal.remember_quietly(entry)
             continue
         try:
-            if action == "skip":
-                entry["status"] = "skipped"
-                entry["result"] = {"ok": True, "skipped": True}
-                results.append(entry)
-                _remember(entry, plan_hash, log_root, workspace_log_root)
-                continue
-            if action in {"create", "update", "delete"}:
-                _remember(
-                    {**entry, "status": "started"},
-                    plan_hash,
-                    log_root,
-                    workspace_log_root,
-                )
-            if action == "update":
-                remote = client.get_test_case(str(operation["test_case_key"]))
-                if remote.get("status_code") == 429:
-                    entry["status"] = "paused"
-                    entry["retry_after"] = remote.get("retry_after")
-                    entry["result"] = remote
-                    results.append(entry)
-                    _remember(entry, plan_hash, log_root, workspace_log_root)
-                    return _stop_remaining(
-                        results,
-                        operations,
-                        index + 1,
-                        previous,
-                        code="RATE_LIMITED",
-                        error="Пачка остановлена: Zephyr ограничил частоту запросов.",
-                        plan_hash=plan_hash,
-                        log_root=log_root,
-                        workspace_log_root=workspace_log_root,
-                    )
-                remote_status = _op_status(remote)
-                if remote_status == "auth":
-                    entry["status"] = "failed"
-                    entry["code"] = "AUTH_STOPPED"
-                    entry["result"] = remote
-                    results.append(entry)
-                    _remember(entry, plan_hash, log_root, workspace_log_root)
-                    return _stop_remaining(
-                        results,
-                        operations,
-                        index + 1,
-                        previous,
-                        code="AUTH_STOPPED",
-                        error="Пачка остановлена: Zephyr вернул 401 или 403.",
-                        plan_hash=plan_hash,
-                        log_root=log_root,
-                        workspace_log_root=workspace_log_root,
-                    )
-                if remote_status != "success":
-                    entry["status"] = remote_status
-                    entry["result"] = remote
-                    if remote.get("retry_after") is not None:
-                        entry["retry_after"] = remote["retry_after"]
-                    results.append(entry)
-                    _remember(entry, plan_hash, log_root, workspace_log_root)
-                    continue
-                fresh = fingerprint_from_response(remote)
-                if fresh != operation.get("baseline_fingerprint"):
-                    entry["status"] = "conflict"
-                    entry["error"] = "Кейс изменился после чтения для diff. Нужен новый preview."
-                    results.append(entry)
-                    _remember(entry, plan_hash, log_root, workspace_log_root)
-                    continue
-                changes = update_changes(operation, remote)
-                if not changes:
-                    entry["status"] = "success"
-                    entry["code"] = "UNCHANGED"
-                    results.append(entry)
-                    _remember(entry, plan_hash, log_root, workspace_log_root)
-                    continue
-                entry["result"] = client.update_test_case(str(operation["test_case_key"]), **changes)
-            elif action == "create":
-                entry["result"] = client.create_test_case(
-                    name=str(operation["name"]),
-                    objective=operation.get("objective"),
-                    precondition=_precondition(operation),
-                    folder=operation.get("folder"),
-                    status=str(operation.get("status", "Draft")),
-                    priority=str(operation.get("priority", "Normal")),
-                    project_key=operation.get("project_key"),
-                    steps=operation.get("steps"),
-                    labels=import_labels_for_zephyr(),
-                )
-            elif action == "delete":
-                entry["result"] = client.delete_test_case(str(operation["test_case_key"]))
-            else:
-                entry["result"] = {
-                    "ok": False,
-                    "status_code": 400,
-                    "error": f"Неизвестное action: {action!r}. Допустимо: create, update, delete.",
+            journal.remember({**entry, "status": "started"})
+        except _JournalUnavailable:
+            entry.update(
+                {
+                    "status": "not_sent",
+                    "code": "LOG_UNAVAILABLE",
+                    "error": "Журнал apply не записывается. Запрос в Zephyr не отправлен.",
                 }
-        except (ConfigError, UnsafeKey, ValueError) as exc:
-            entry["status"] = "not_sent"
-            entry["code"] = "NOT_SENT"
-            entry["error"] = str(exc)
+            )
             results.append(entry)
-            continue
+            return stop(index, "LOG_UNAVAILABLE", "Пачка остановлена: журнал apply недоступен.")
+        try:
+            result = _send(client, operation, action, entry)
+            if result is not None:
+                _finish(entry, action, result)
+        except _BatchStop as halt:
+            results.append(entry)
+            journal.remember_quietly(entry)
+            return stop(index, halt.code, halt.error)
+        except _NOT_SENT_ERRORS as exc:
+            entry.update({"status": "not_sent", "code": "NOT_SENT", "error": str(exc)})
         except Exception as exc:  # noqa: BLE001 — исход одного кейса не должен терять уже выполненные
-            entry["result"] = {"ok": False, "status_code": 0, "outcome": "unknown", "error": type(exc).__name__}
-        result = entry.get("result") or {}
-        if result.get("status_code") == 429 or result.get("outcome") == "paused":
-            entry["status"] = "paused"
-            entry["retry_after"] = result.get("retry_after")
-            results.append(entry)
-            _remember(entry, plan_hash, log_root, workspace_log_root)
-            return _stop_remaining(
-                results,
-                operations,
-                index + 1,
-                previous,
-                code="RATE_LIMITED",
-                error="Пачка остановлена: Zephyr ограничил частоту запросов.",
-                plan_hash=plan_hash,
-                log_root=log_root,
-                workspace_log_root=workspace_log_root,
-            )
-        status = _op_status(result)
-        if action == "create" and status == "success" and not _zephyr_key(result):
-            status = "unknown"
-            entry["code"] = "RECONCILE_REQUIRED"
-            entry["error"] = "Ответ create не содержит ключ кейса. Нужна сверка, повторный POST не выполняется."
-        if status == "auth":
-            entry["status"] = "failed"
-            entry["code"] = "AUTH_STOPPED"
-            entry["error"] = "Zephyr вернул 401 или 403."
-            results.append(entry)
-            _remember(entry, plan_hash, log_root, workspace_log_root)
-            return _stop_remaining(
-                results,
-                operations,
-                index + 1,
-                previous,
-                code="AUTH_STOPPED",
-                error="Пачка остановлена: Zephyr вернул 401 или 403.",
-                plan_hash=plan_hash,
-                log_root=log_root,
-                workspace_log_root=workspace_log_root,
-            )
-        entry["status"] = status
-        zephyr_key = _zephyr_key(result)
-        if zephyr_key:
-            entry["zephyr_key"] = zephyr_key
-        if result.get("retry_after") is not None:
-            entry["retry_after"] = result["retry_after"]
-        if status == "unknown" and "error" not in entry:
-            entry["error"] = result.get("error") or "Исход операции неизвестен."
-        elif status == "failed":
-            entry["error"] = result.get("error") or f"Zephyr вернул {result.get('status_code')}."
+            entry.update({"status": "unknown", "error": type(exc).__name__})
         results.append(entry)
-        _remember(entry, plan_hash, log_root, workspace_log_root)
+        try:
+            journal.remember(entry)
+        except _JournalUnavailable:
+            entry["log_error"] = "Результат не записан в журнал. При повторе create потребует сверки."
+            return stop(index, "LOG_UNAVAILABLE", "Пачка остановлена: журнал apply недоступен.")
     return results
+
+
+def reconcile_entry(
+    *,
+    case_id: str,
+    action: str,
+    op_hash: str,
+    resolution: str,
+    zephyr_key: str | None,
+) -> dict[str, Any]:
+    """Запись сверки unknown/started create: найден в Zephyr (success) или подтверждено отсутствие."""
+    entry: dict[str, Any] = {"case_id": case_id, "action": action, "op_hash": op_hash, "code": "RECONCILED"}
+    if resolution == "created":
+        entry["status"] = "success"
+        entry["zephyr_key"] = zephyr_key
+    else:
+        entry["status"] = RECONCILED_ABSENT
+    return entry

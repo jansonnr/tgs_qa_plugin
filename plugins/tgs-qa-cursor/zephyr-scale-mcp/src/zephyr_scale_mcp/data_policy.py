@@ -72,6 +72,21 @@ def mask_secrets(text: str) -> tuple[str, int]:
     return masked, count
 
 
+SECRET_PLACEHOLDER = "[secret]"
+
+
+def agent_view(text: str) -> str:
+    """Строка в том виде, в каком её получает агент через to_agent."""
+    masked, _count = mask_secrets(text)
+    if len(masked) > MAX_AGENT_STRING:
+        return masked[: MAX_AGENT_STRING - 1] + "…"
+    return masked
+
+
+def is_hidden_in_agent_view(text: str) -> bool:
+    return agent_view(text) != text
+
+
 def page_text(text: str, *, offset: int = 0, limit: int = MAX_AGENT_STRING) -> dict[str, Any]:
     """Порция текста для агента. complete=false значит, что хвост ещё не прочитан."""
     masked, masked_count = mask_secrets(text)
@@ -206,6 +221,9 @@ def _public_error(payload: dict[str, Any]) -> dict[str, Any]:
         public["status_code"] = payload["status_code"]
     if payload.get("retry_after") is not None:
         public["retry_after"] = payload["retry_after"]
+    for key in ("search_status", "complete"):
+        if key in payload:
+            public[key] = payload[key]
     return public
 
 
@@ -235,10 +253,7 @@ def _walk(value: Any) -> tuple[Any, dict[str, int]]:
         masked, masked_count = mask_secrets(value)
         original = len(value)
         truncated = 1 if len(masked) > MAX_AGENT_STRING else 0
-        if truncated:
-            shown = masked[: MAX_AGENT_STRING - 1] + "…"
-        else:
-            shown = masked
+        shown = agent_view(value)
         return shown, {
             "original_chars": original,
             "returned_chars": len(shown),

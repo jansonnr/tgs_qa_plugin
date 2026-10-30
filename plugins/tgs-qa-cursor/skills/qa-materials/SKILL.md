@@ -15,7 +15,8 @@ Read [REQUIREMENTS.md](../../docs/REQUIREMENTS.md). Warn on very large material 
 
 ## MCP (when applicable)
 
-- Confluence: `get_confluence_page` (pageId or URL).
+- Confluence: `get_confluence_page` (pageId or URL). Long pages come in portions: while `content_complete` is `false`, call again with `text_offset = next_offset` and append. Do not finish the material until `content_complete: true`, or the user explicitly agrees to a partial read — then mark the material `"complete": false`.
+  With `include_linked_pages=true` show every entry of `link_warnings` (link without space, ambiguous or failed page) to the user; such a page is not part of the material.
 - Jira issue: `get_jira_issue` when available in MCP (see [MCP-GAP-ANALYSIS.md](../../docs/MCP-GAP-ANALYSIS.md)).
 - Credentials: только `set_credentials`. Не открывать файл конфига MCP и не писать токены в `.qa/`, чат или аргументы tools.
 

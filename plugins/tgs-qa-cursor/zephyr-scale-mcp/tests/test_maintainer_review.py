@@ -488,6 +488,7 @@ def test_c10_precondition_is_written(tmp_path: Path) -> None:
 
 
 def test_c13_secret_placeholder_is_not_written_back() -> None:
-    remote = {"ok": True, "data": {"name": "Case", "objective": "real-secret-value", "testScript": {"steps": []}}}
-    changes = update_changes({"name": "Case", "objective": "[secret]"}, remote)
+    secret = "Bearer abcdefghijklmnopqrstuvwxyz0123456789"
+    remote = {"ok": True, "data": {"name": "Case", "objective": f"Токен {secret}", "testScript": {"steps": []}}}
+    changes = update_changes({"name": "Case", "objective": "Токен [secret]"}, remote)
     assert "objective" not in changes

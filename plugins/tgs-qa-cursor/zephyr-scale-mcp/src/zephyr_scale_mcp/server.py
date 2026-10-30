@@ -8,8 +8,15 @@ from typing import Any, Callable
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
-from zephyr_scale_mcp.apply_executor import execute_plan_operations
-from zephyr_scale_mcp.apply_log import ApplyBusy, apply_log_path, hold_apply_lock
+from zephyr_scale_mcp.apply_executor import execute_plan_operations, reconcile_entry
+from zephyr_scale_mcp.apply_log import (
+    ApplyBusy,
+    append_apply_log,
+    apply_log_path,
+    hold_apply_lock,
+    read_apply_log,
+)
+from zephyr_scale_mcp.keys import UnsafeKey, require_case_key, require_numeric_id, require_project_key
 from zephyr_scale_mcp.data_policy import (
     DIRECT_HTTP_BOUNDARY,
     LOCAL_STORAGE,
@@ -26,9 +33,11 @@ from zephyr_scale_mcp.apply_gate import (
 from zephyr_scale_mcp.plan_rules import (
     PlanRejected,
     adapt_plan,
+    effective_action,
     expand_folder_scope,
     folder_query,
     match_candidates,
+    operation_hash,
     plan_hash,
     run_log_key,
     sync_folder_index,
@@ -99,23 +108,41 @@ def _apply_payload(plan_hash_value: str, run_id: str | None, results: list[dict[
     }
 
 
-def _prepared_plan(plan: dict[str, Any]) -> dict[str, Any]:
-    adapted = adapt_plan(plan)
+def _prepared_plan(plan: dict[str, Any], draft: dict[str, Any] | None = None) -> dict[str, Any]:
+    adapted = adapt_plan(plan, draft)
+    if not str(adapted.get("run_id") or "").strip():
+        raise PlanRejected(
+            "PLAN_INVALID",
+            "В plan нужен run_id черновика: по нему разделяются журналы независимых запусков.",
+        )
     validate_plan(adapted)
     return adapted
 
 
 def _plan_target(plan: dict[str, Any]) -> dict[str, str]:
+    """Адресат всего плана: один origin и один проект для всех операций."""
     settings = get_settings()
-    project = settings.project_key
+    explicit = {
+        str(operation["project_key"]).strip()
+        for operation in plan.get("operations") or []
+        if isinstance(operation, dict) and str(operation.get("project_key") or "").strip()
+    }
+    if len(explicit) > 1:
+        raise PlanRejected("TARGET_MIXED", "Операции плана пишут в разные проекты. Раздели план по проектам.")
+    project = next(iter(explicit)) if explicit else settings.project_key
     for operation in plan.get("operations") or []:
-        if isinstance(operation, dict) and str(operation.get("project_key") or "").strip():
-            project = str(operation["project_key"]).strip()
-            break
+        if not isinstance(operation, dict) or effective_action(operation) not in {"update", "delete"}:
+            continue
+        key_project = str(operation.get("test_case_key") or "").rsplit("-T", 1)[0]
+        if key_project != project:
+            raise PlanRejected(
+                "TARGET_MIXED",
+                f"{operation.get('test_case_key')} не из проекта {project}. Раздели план по проектам.",
+            )
     return {"origin": origin_of(settings.base_url), "project_key": project}
 
 
-def _execution_plan(plan: dict[str, Any]) -> tuple[list[dict[str, Any]], Path | None]:
+def _execution_plan(plan: dict[str, Any], target: dict[str, str]) -> tuple[list[dict[str, Any]], Path | None]:
     validate_plan(plan)
     workspace: Path | None = None
     if plan.get("qa_root"):
@@ -123,7 +150,12 @@ def _execution_plan(plan: dict[str, Any]) -> tuple[list[dict[str, Any]], Path | 
             workspace = resolve_qa_log_dir(str(plan["qa_root"]))
         except QaPathError as exc:
             raise PlanRejected("QA_PATH", str(exc)) from exc
-    return redact_operations(plan), workspace
+    operations = []
+    for operation in redact_operations(plan):
+        if effective_action(operation) == "create":
+            operation = {**operation, "project_key": target["project_key"]}
+        operations.append(operation)
+    return operations, workspace
 
 
 @dataclass(frozen=True)
@@ -136,10 +168,10 @@ class _PlanExecution:
     log_key: str
 
 
-def _plan_execution(plan: dict[str, Any]) -> _PlanExecution:
-    adapted = _prepared_plan(plan)
-    operations, workspace_log = _execution_plan(adapted)
+def _plan_execution(plan: dict[str, Any], draft: dict[str, Any] | None = None) -> _PlanExecution:
+    adapted = _prepared_plan(plan, draft)
     target = _plan_target(adapted)
+    operations, workspace_log = _execution_plan(adapted, target)
     digest = plan_hash(adapted, target=target)
     log_key = run_log_key(adapted, origin=target["origin"], project_key=target["project_key"])
     return _PlanExecution(
@@ -179,7 +211,7 @@ def _run_under_apply_lock(log_key: str, runner: Callable[[], dict[str, Any]]) ->
 def _call(fn, *args, **kwargs) -> str:
     try:
         result = fn(*args, **kwargs)
-    except ConfigError as exc:
+    except (ConfigError, UnsafeKey) as exc:
         return _dumps({"ok": False, "error": str(exc)})
     except Exception as exc:  # noqa: BLE001 — агенту не отдаём сырой текст внешнего API
         return _dumps({"ok": False, "error": type(exc).__name__})
@@ -244,29 +276,37 @@ def prepare_apply(
     plan: dict[str, Any],
     run_id: str | None = None,
     ttl_seconds: int = 900,
+    draft: dict[str, Any] | None = None,
 ) -> str:
     """Выдать одноразовый apply_token на конкретный plan.
 
     Вызывай только после явного подтверждения пользователем (Apply), не по фразе в чате.
+    plan.run_id обязателен; аргумент run_id, если передан, должен с ним совпадать.
     plan.search_status — ok или ok_with_limited_index. api_error, index_incomplete и cache_stale
     отклоняют весь план. Нерешённый ask и две операции в один test_case_key тоже отклоняют план.
+    draft — черновик { run_id, revision, cases[] }: из него берутся шаги, test_data, expected_results,
+    preconditions, folder, status и priority для строк плана. Передавай тот же draft в apply_plan и resume_apply.
     case_id — внутренний id черновика. Сервер сам считает plan_hash; правка плана делает token недействительным.
+    Ответ содержит target (origin и проект) и operations — именно то, что уйдёт в Zephyr. Покажи их в preview.
     """
     try:
-        adapted = _prepared_plan(plan)
-        target = _plan_target(adapted)
-        digest = plan_hash(adapted, target=target)
+        execution = _plan_execution(plan, draft)
+        plan_run_id = str(execution.adapted.get("run_id"))
+        if run_id is not None and run_id.strip() != plan_run_id:
+            raise PlanRejected("PLAN_INVALID", "run_id аргумента не совпадает с plan.run_id.")
         token, expires_at = get_apply_token_store().issue(
-            plan_hash=digest,
-            run_id=run_id,
+            plan_hash=execution.digest,
+            run_id=plan_run_id,
             ttl_seconds=ttl_seconds,
         )
         return _dumps(
             {
                 "ok": True,
                 "apply_token": token,
-                "plan_hash": digest,
-                "run_id": run_id,
+                "plan_hash": execution.digest,
+                "run_id": plan_run_id,
+                "target": execution.target,
+                "operations": to_agent({"operations": execution.operations})["operations"],
                 "expires_at": expires_at,
             }
         )
@@ -280,19 +320,19 @@ def prepare_apply(
 
 @mcp.tool(
     title="Применить план в Zephyr",
-    annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False),
+    annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=False),
 )
-def apply_plan(apply_token: str, plan: dict[str, Any]) -> str:
+def apply_plan(apply_token: str, plan: dict[str, Any], draft: dict[str, Any] | None = None) -> str:
     """Единственный путь записи тест-кейсов.
 
-    plan — тот же объект, что у prepare_apply. Перед update кейс читается заново:
+    plan и draft — те же объекты, что у prepare_apply. Перед update и delete кейс читается заново:
     если fingerprint не совпал с baseline_fingerprint, строка не пишется (conflict).
     skip не вызывает Zephyr. case_id в API Zephyr не передаётся.
-    Журнал пишется после каждой операции. 401 и 403 останавливают пачку.
-    Повторный create после unknown не выполняется: вызови resume_apply для продолжения.
+    Журнал: started до запроса, итог после. 401/403 и 429 останавливают пачку, хвост остаётся not_run.
+    Повторный create после unknown не выполняется: сверь через reconcile_apply, затем resume_apply.
     """
     try:
-        execution = _plan_execution(plan)
+        execution = _plan_execution(plan, draft)
     except PlanRejected as exc:
         return _dumps({"ok": False, "code": exc.code, "error": exc.message})
     except ConfigError as exc:
@@ -319,16 +359,17 @@ def apply_plan(apply_token: str, plan: dict[str, Any]) -> str:
 
 @mcp.tool(
     title="Продолжить уже подтверждённый apply",
-    annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False),
+    annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=False),
 )
-def resume_apply(apply_token: str, plan: dict[str, Any]) -> str:
+def resume_apply(apply_token: str, plan: dict[str, Any], draft: dict[str, Any] | None = None) -> str:
     """Продолжить план, который уже прошёл apply_plan.
 
-    Успешные операции не повторяются. create со статусом unknown не создаётся снова.
-    Нужен тот же apply_token, что после prepare_apply (уже использованный при первом apply_plan).
+    Успешные операции не повторяются. create со статусом unknown не создаётся снова до reconcile_apply.
+    Нужен тот же apply_token, что после prepare_apply (уже использованный при первом apply_plan),
+    и тот же план: правка строки требует нового preview и prepare_apply.
     """
     try:
-        execution = _plan_execution(plan)
+        execution = _plan_execution(plan, draft)
     except PlanRejected as exc:
         return _dumps({"ok": False, "code": exc.code, "error": exc.message})
     except ConfigError as exc:
@@ -363,6 +404,102 @@ def resume_apply(apply_token: str, plan: dict[str, Any]) -> str:
 
 
 @mcp.tool(
+    title="Сверить create с неизвестным исходом",
+    annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False),
+)
+def reconcile_apply(
+    apply_token: str,
+    plan: dict[str, Any],
+    case_id: str,
+    resolution: str,
+    zephyr_key: str | None = None,
+    draft: dict[str, Any] | None = None,
+) -> str:
+    """Записать в журнал результат сверки create с кодом RECONCILE_REQUIRED.
+
+    Вызывай только после того, как QA сам проверил Zephyr и назвал результат.
+    resolution=created — кейс найден: нужен zephyr_key, сервер читает его и сверяет name; дальше строка считается success.
+    resolution=absent — QA подтвердил, что кейса нет: resume_apply создаст его один раз.
+    Нужен тот же apply_token и тот же план, что у apply_plan.
+    """
+    if resolution not in {"created", "absent"}:
+        return _dumps({"ok": False, "code": "PLAN_INVALID", "error": "resolution: created или absent."})
+    try:
+        execution = _plan_execution(plan, draft)
+    except PlanRejected as exc:
+        return _dumps({"ok": False, "code": exc.code, "error": exc.message})
+    except ConfigError as exc:
+        return _dumps({"ok": False, "code": "CONFIG", "error": str(exc)})
+    if not get_apply_token_store().authorize_resume(apply_token, plan_hash=execution.digest):
+        return _dumps(
+            {
+                "ok": False,
+                "code": "APPLY_TOKEN_INVALID",
+                "error": "reconcile_apply требует тот же apply_token после apply_plan; токен истёк или план изменился.",
+            }
+        )
+    operation = next(
+        (
+            item
+            for item in execution.operations
+            if str(item.get("case_id") or "") == case_id and effective_action(item) == "create"
+        ),
+        None,
+    )
+    if operation is None:
+        return _dumps({"ok": False, "code": "PLAN_INVALID", "error": f"В плане нет create с case_id {case_id}."})
+
+    def _run() -> dict[str, Any]:
+        previous, corrupt_lines = read_apply_log(execution.log_key)
+        prior = previous.get((case_id, "create"))
+        status = prior.get("status") if prior else None
+        blocked_by_corruption = bool(corrupt_lines) and (
+            prior is None or int(prior.get("line") or 0) < max(corrupt_lines)
+        )
+        if status not in {"unknown", "started"} and not blocked_by_corruption:
+            return {
+                "ok": False,
+                "code": "NOTHING_TO_RECONCILE",
+                "error": f"Для {case_id} нет create с неизвестным исходом (статус {status}).",
+            }
+        key: str | None = None
+        if resolution == "created":
+            try:
+                key = require_case_key(zephyr_key)
+            except UnsafeKey as exc:
+                return {"ok": False, "code": "PLAN_INVALID", "error": str(exc)}
+            if key.rsplit("-T", 1)[0] != execution.target["project_key"]:
+                return {"ok": False, "code": "TARGET_MIXED", "error": f"{key} не из проекта плана."}
+            fetched = _client().get_test_case(key)
+            if fetched.get("ok") is not True:
+                return {
+                    "ok": False,
+                    "code": "RECONCILE_UNVERIFIED",
+                    "error": f"Не удалось прочитать {key}: Zephyr вернул {fetched.get('status_code')}.",
+                }
+            data = fetched.get("data") if isinstance(fetched.get("data"), dict) else {}
+            if str(data.get("name") or "") != str(operation.get("name") or ""):
+                return {
+                    "ok": False,
+                    "code": "RECONCILE_UNVERIFIED",
+                    "error": f"Название {key} не совпадает с name строки {case_id}.",
+                }
+        entry = reconcile_entry(
+            case_id=case_id,
+            action="create",
+            op_hash=operation_hash(operation),
+            resolution=resolution,
+            zephyr_key=key,
+        )
+        append_apply_log(execution.log_key, entry)
+        if execution.workspace_log is not None:
+            append_apply_log(execution.log_key, entry, execution.workspace_log)
+        return {"ok": True, "case_id": case_id, "status": entry["status"], "zephyr_key": key}
+
+    return _run_under_apply_lock(execution.log_key, _run)
+
+
+@mcp.tool(
     title="Индекс кейсов выбранных папок",
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True),
 )
@@ -371,11 +508,13 @@ def sync_testcase_index(
     include_subfolders: bool = False,
     project_key: str | None = None,
     max_pages: int = 40,
+    project_id: str | None = None,
 ) -> str:
     """Постранично загрузить краткий индекс кейсов (key, name, labels, objective, precondition).
 
     Это не поиск по произвольной фразе. search_status=ok только если прочитаны все страницы.
     index_incomplete и api_error нельзя трактовать как отсутствие дублей.
+    include_subfolders для project_key, отличного от настроенного, требует project_id того же проекта.
     """
     if not folder_ids:
         return _dumps({"ok": False, "error": "Укажи хотя бы одну папку."})
@@ -383,18 +522,24 @@ def sync_testcase_index(
     def _run() -> dict[str, Any]:
         client = _client()
         settings = get_settings()
-        selected_project = project_key or settings.project_key
+        selected_project = require_project_key(project_key or settings.project_key)
+        if project_id:
+            selected_id = require_numeric_id(project_id, what="id проекта")
+        elif selected_project == settings.project_key:
+            selected_id = str(settings.project_id or "").strip()
+        else:
+            selected_id = ""
         scope = list(folder_ids)
         if include_subfolders:
-            if selected_project != settings.project_key or not str(settings.project_id or "").strip():
+            if not selected_id:
                 return {
                     "ok": False,
                     "search_status": "index_incomplete",
                     "complete": False,
                     "items": [],
-                    "error": "Нельзя обойти подпапки: id проекта не разрешён для выбранного project_key.",
+                    "error": f"Нельзя обойти подпапки: передай project_id проекта {selected_project}.",
                 }
-            tree = client.get_folder_tree(settings.project_id)
+            tree = client.get_folder_tree(selected_id)
             if tree.get("ok") is not True:
                 return {
                     "ok": False,
@@ -417,6 +562,7 @@ def sync_testcase_index(
         )
         indexed["folder_ids"] = scope
         indexed["query"] = query
+        indexed["project"] = {"project_key": selected_project, "project_id": selected_id or None}
         return indexed
 
     return _call(_run)

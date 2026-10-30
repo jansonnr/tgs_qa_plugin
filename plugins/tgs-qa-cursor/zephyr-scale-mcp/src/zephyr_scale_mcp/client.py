@@ -16,6 +16,7 @@ from zephyr_scale_mcp.keys import (
     path_segment,
     require_case_key,
     require_numeric_id,
+    require_project_key,
     require_run_key,
 )
 
@@ -233,7 +234,7 @@ class ZephyrClient:
         start_at: int = 0,
         project_key: str | None = None,
     ) -> dict[str, Any]:
-        q = query or f'projectKey = "{project_key or self.settings.project_key}"'
+        q = query or f'projectKey = "{require_project_key(project_key or self.settings.project_key)}"'
         return self.request(
             "GET",
             "/rest/atm/1.0/testcase/search",
@@ -304,7 +305,7 @@ class ZephyrClient:
         max_results: int = 50,
         project_key: str | None = None,
     ) -> dict[str, Any]:
-        q = query or f'projectKey = "{project_key or self.settings.project_key}"'
+        q = query or f'projectKey = "{require_project_key(project_key or self.settings.project_key)}"'
         return self.request(
             "GET",
             "/rest/atm/1.0/testrun/search",

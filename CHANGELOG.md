@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+Доработки по ревью мейнтейнера 0.3.5 (C01–C25).
+
+- Apply: история операции по `case_id` не зависит от текста соседних строк; успешный create не повторяется и после правки строки (`ALREADY_CREATED`). `unknown`/`started` create и повреждённый журнал требуют сверки.
+- Новый tool `reconcile_apply`: `created` + ключ (сервер сверяет name) или `absent`.
+- Журнал: `started` пишется до запроса; если журнал недоступен, запрос не уходит (`LOG_UNAVAILABLE`). Сбой журнала в `.qa/` не теряет результат. `not_sent` после `started` не блокирует повтор.
+- Блокировка apply — средствами ОС (`msvcrt`/`fcntl`): снимается при падении владельца, без гонки по пустому lock-файлу.
+- `prepare_apply` требует `plan.run_id`, фиксирует один origin и один проект для плана и возвращает `target` и `operations` для preview. Параметр `draft` переносит в строки плана шаги, `test_data`, `expected_results`, `preconditions`, `folder`, `status`, `priority`.
+- Валидация до preview: поля шагов, пустые status/priority, `labels` в create (ставится только `AI_Cursor`), `project_key`, `baseline_fingerprint` для delete.
+- Update: маскированные и усечённые поля без правки сохраняются из Zephyr; правка с `[secret]`/`…` отклоняется. Delete перечитывает кейс и сверяет baseline.
+- Индекс: строки без ключа — неизвестная схема (`api_error`); `search_status`/`complete` не теряются в ответе с ошибкой; `sync_testcase_index` принимает `project_id` для подпапок другого проекта.
+- Matcher принимает кейс черновика как есть (строковые шаги, `test_data`, `preconditions`) и учитывает отличия предусловий.
+- `apply_plan`/`resume_apply` помечены `destructive_hint` (план может содержать delete).
+- Документация 429, контракт `steps` (полный список), чтение Confluence порциями в `/qa-materials`.
+
 ## 0.3.6
 
 - Структура **team marketplace**: `.cursor-plugin/marketplace.json`, плагин в `plugins/tgs-qa-cursor/`.

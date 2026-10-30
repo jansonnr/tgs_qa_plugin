@@ -7,6 +7,7 @@ from urllib.parse import quote
 
 _CASE_KEY = re.compile(r"^[A-Z][A-Z0-9]+-T\d+$")
 _RUN_KEY = re.compile(r"^[A-Z][A-Z0-9]+-R\d+$")
+_PROJECT_KEY = re.compile(r"^[A-Z][A-Z0-9]+$")
 _NUMERIC_ID = re.compile(r"^[1-9]\d*$|^0$")
 _ALLOWED_PREFIXES = ("/rest/atm/1.0/", "/rest/tests/1.0/")
 
@@ -21,6 +22,10 @@ def require_case_key(value: object) -> str:
 
 def require_run_key(value: object) -> str:
     return _require(value, _RUN_KEY, "ключ тест-рана")
+
+
+def require_project_key(value: object) -> str:
+    return _require(value, _PROJECT_KEY, "ключ проекта")
 
 
 def require_numeric_id(value: object, *, what: str) -> str:

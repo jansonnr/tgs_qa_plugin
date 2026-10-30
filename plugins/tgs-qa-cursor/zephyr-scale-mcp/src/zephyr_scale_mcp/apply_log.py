@@ -4,7 +4,7 @@ import json
 import os
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import IO, Any, Iterator
 
 from zephyr_scale_mcp.config import config_dir
 
@@ -21,6 +21,9 @@ _LOG_FIELDS = (
     "already_applied",
     "op_hash",
 )
+
+PROTECTED_STATUSES = frozenset({"success", "unknown", "started"})
+RECONCILED_ABSENT = "reconciled_absent"
 
 
 def apply_log_path(plan_hash: str, root: Path | None = None) -> Path:
@@ -43,91 +46,92 @@ class ApplyBusy(RuntimeError):
     """Другой apply этого плана ещё выполняется."""
 
 
-def _pid_alive(pid: int) -> bool:
-    if pid <= 0:
-        return False
+def _try_lock(handle: IO[bytes]) -> bool:
+    handle.seek(0)
     if os.name == "nt":
-        return _windows_pid_alive(pid)
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
+        import msvcrt
+
+        try:
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError:
+            return False
         return True
+    import fcntl
+
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         return False
     return True
 
 
-def _windows_pid_alive(pid: int) -> bool:
-    import ctypes
+def _unlock(handle: IO[bytes]) -> None:
+    handle.seek(0)
+    if os.name == "nt":
+        import msvcrt
 
-    kernel = ctypes.windll.kernel32
-    handle = kernel.OpenProcess(0x1000, False, pid)
-    if handle:
-        kernel.CloseHandle(handle)
-        return True
-    return kernel.GetLastError() == 5
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        return
+    import fcntl
 
-
-def _lock_is_stale(path: Path) -> bool:
-    try:
-        pid = int(path.read_text(encoding="utf-8").strip() or "0")
-    except (OSError, ValueError):
-        return False
-    return not _pid_alive(pid)
+    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 @contextmanager
 def hold_apply_lock(plan_hash: str, root: Path | None = None) -> Iterator[None]:
+    """Блокировка ОС: снимается при закрытии дескриптора или смерти процесса. Файл не удаляется."""
     path = apply_log_path(plan_hash, root).with_suffix(".lock")
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd: int | None = None
-    for _attempt in range(2):
-        try:
-            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
-            if _lock_is_stale(path):
-                try:
-                    path.unlink()
-                except PermissionError:
-                    raise ApplyBusy(plan_hash) from None
-                continue
-            raise ApplyBusy(plan_hash) from None
-        os.write(fd, str(os.getpid()).encode())
-        break
-    if fd is None:
-        raise ApplyBusy(plan_hash)
+    handle = path.open("a+b")
     try:
-        yield
+        if not _try_lock(handle):
+            raise ApplyBusy(plan_hash)
+        try:
+            yield
+        finally:
+            _unlock(handle)
     finally:
-        os.close(fd)
-        path.unlink(missing_ok=True)
+        handle.close()
 
 
-def latest_apply_entries(plan_hash: str, root: Path | None = None) -> tuple[dict[tuple[str, str], dict[str, Any]], bool]:
+def latest_apply_entries(
+    plan_hash: str, root: Path | None = None
+) -> tuple[dict[tuple[str, str], dict[str, Any]], bool]:
+    found, corrupt_lines = read_apply_log(plan_hash, root)
+    return found, bool(corrupt_lines)
+
+
+def read_apply_log(
+    plan_hash: str, root: Path | None = None
+) -> tuple[dict[tuple[str, str], dict[str, Any]], list[int]]:
+    """Последняя значимая запись по (case_id, action) и номера повреждённых строк.
+
+    У записи есть служебное поле line — номер строки в журнале.
+    """
     path = apply_log_path(plan_hash, root)
     found: dict[tuple[str, str], dict[str, Any]] = {}
-    corrupt = False
+    corrupt_lines: list[int] = []
     if not path.is_file():
-        return found, corrupt
-    for line in path.read_text(encoding="utf-8").splitlines():
+        return found, corrupt_lines
+    raw = path.read_bytes().decode("utf-8", errors="replace")
+    for number, line in enumerate(raw.splitlines(), start=1):
         if not line.strip():
             continue
         try:
             entry = json.loads(line)
         except json.JSONDecodeError:
-            corrupt = True
+            corrupt_lines.append(number)
             continue
         if not isinstance(entry, dict):
-            corrupt = True
+            corrupt_lines.append(number)
             continue
         case_id = str(entry.get("case_id") or "")
         action = str(entry.get("action") or "")
         if not case_id or not action:
             continue
         previous = found.get((case_id, action))
-        if previous and previous.get("status") in {"success", "unknown", "started"} and entry.get("status") == "not_run":
+        if previous and previous.get("status") in PROTECTED_STATUSES and entry.get("status") == "not_run":
             continue
+        entry["line"] = number
         found[(case_id, action)] = entry
-    return found, corrupt
+    return found, corrupt_lines

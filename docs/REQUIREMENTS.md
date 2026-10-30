@@ -260,7 +260,7 @@ flowchart TB
 | **FR-PUB-01** | Apply только из dedupe-plan + draft payloads той же ревизии | qa-apply-zephyr | apply-log |
 | **FR-PUB-02** | Preview таблицы до MCP mutate; смена данных требует новый preview | qa-apply-zephyr | chat, plan |
 | **FR-PUB-03** | create + update (PUT); skip только log | qa-apply-zephyr | TMS |
-| **FR-PUB-04** | Ошибка одного кейса не отменяет batch, кроме auth и повторного 429 | qa-apply-zephyr | apply-log |
+| **FR-PUB-04** | Ошибка одного кейса не отменяет batch, кроме auth, 429 и недоступного журнала | qa-apply-zephyr | apply-log |
 | **FR-PUB-05** | Журнал по каждой операции: `ok` / `failed` / `unknown`; успешные не повторять | qa-apply-zephyr | apply-log |
 | **FR-PRM-01** | Канонические тексты LLM в `prompts/`; skills обязаны читать | все skills | prompts/ |
 | **FR-SEC-01** | Confirm перед create/update в TMS | qa-apply-zephyr | — |
@@ -410,8 +410,11 @@ fingerprint и к `draft_revision`. Любая смена ревизии, action
 папке, можно показать единственное точное совпадение и спросить, тот ли это кейс. Ошибка этой
 проверки оставляет `unknown`.
 
-**429.** Один раз подождать `Retry-After` (если его нет — не дольше 60 с) и повторить тот же пункт.
-Второй 429 останавливает всю пачку, хвост остаётся `pending`. **401/403** останавливают пачку сразу.
+Сверка выполняется через `reconcile_apply`: `created` с ключом (MCP сверяет name) или `absent`
+(после этого `resume_apply` создаёт кейс один раз).
+
+**429.** Мутация с 429 останавливает пачку, хвост остаётся `not_run`. Продолжить `resume_apply`
+не раньше `retry_after`. GET с коротким `Retry-After` (≤ 2 с) MCP повторяет сам. **401/403** останавливают пачку сразу.
 Остальные ошибки пункта пачку не останавливают (FR-PUB-04).
 
 Повторный запуск `/qa-apply-zephyr` продолжает тот же журнал: `ok` не трогать. Для хвоста `pending`

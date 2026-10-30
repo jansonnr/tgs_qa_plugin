@@ -45,6 +45,7 @@ Gap: `get_jira_issue`, `list_folder_test_cases`, `update_test_case` — см. [M
 - Набор кейсов: `list_folder_test_cases` в scope `search_folders` и/или узкий `search_test_cases` по якорям.
   Как гарантировать все страницы и вложенные папки — открытый вопрос ревью п. 1; не выдумывай полноту.
 - **Не** один запрос на весь проект с огромным `maxResults`.
+- `sync_testcase_index` с `include_subfolders=true` для проекта, отличного от настроенного, требует `project_id` этого же проекта. Без него MCP вернёт `index_incomplete` — это не «дублей нет».
 - Если выгрузка оборвалась, вернула ошибку или полнота неясна — `"complete": false`. Иначе `"complete": true`.
 - Index entry fields only: `key`, `name`, `folder`, `status`, `priority`, `updated` (без полного testScript).
 - Path: `.qa/cache/zephyr/<projectKey>/folders/<folderId>/index.json`

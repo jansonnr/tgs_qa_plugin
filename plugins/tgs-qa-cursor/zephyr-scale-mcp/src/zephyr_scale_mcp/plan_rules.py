@@ -5,6 +5,9 @@ import json
 import re
 from typing import Any, Callable
 
+from zephyr_scale_mcp.data_policy import SECRET_PLACEHOLDER, agent_view, is_hidden_in_agent_view
+from zephyr_scale_mcp.import_policy import import_labels_for_zephyr
+
 HIGH_NAME_SCORE = 0.95
 SKIP_STEP_SCORE = 0.95
 MAX_CANDIDATES = 10
@@ -35,6 +38,10 @@ class PlanRejected(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+class MaskedFieldEdit(ValueError):
+    """Правка поля, которое агент видел маскированным или усечённым."""
 
 
 def effective_action(operation: dict[str, Any]) -> str:
@@ -86,10 +93,10 @@ def validate_plan(plan: dict[str, Any]) -> None:
             target = str(operation.get("test_case_key") or "").strip()
             if not target:
                 raise PlanRejected("PLAN_INVALID", f"Для {action} у {case_id} нужен test_case_key.")
-            if action == "update" and not str(operation.get("baseline_fingerprint") or "").strip():
+            if not str(operation.get("baseline_fingerprint") or "").strip():
                 raise PlanRejected(
                     "PLAN_INVALID",
-                    f"Для update у {case_id} нужен baseline_fingerprint снимка, по которому строился diff.",
+                    f"Для {action} у {case_id} нужен baseline_fingerprint из свежего get_test_case.",
                 )
             previous = seen_targets.get(target)
             if previous is not None:
@@ -104,24 +111,63 @@ def validate_plan(plan: dict[str, Any]) -> None:
     enforce_secret_decisions(plan)
 
 
+_STEP_KEYS = {"id", "description", "step", "testData", "test_data", "expectedResult", "expected_result"}
+_PROJECT_KEY = re.compile(r"^[A-Z][A-Z0-9]+$")
+
+
 def _validate_operation_shape(operation: dict[str, Any], case_id: str, action: str) -> None:
     from zephyr_scale_mcp.keys import UnsafeKey, require_case_key
 
-    for field in ("status", "priority", "name", "objective", "precondition", "folder"):
+    for field in ("status", "priority", "name", "objective", "precondition", "folder", "project_key"):
         if field in operation and operation[field] is not None and not isinstance(operation[field], str):
             raise PlanRejected("PLAN_INVALID", f"У {case_id} поле {field} должно быть строкой.")
-    if "steps" in operation and operation["steps"] is not None:
-        steps = operation["steps"]
-        if not isinstance(steps, list) or any(not isinstance(step, dict) for step in steps):
+    if action == "create":
+        for field in ("status", "priority"):
+            if field in operation and not str(operation[field] or "").strip():
+                raise PlanRejected(
+                    "PLAN_INVALID",
+                    f"У {case_id} поле {field} пустое. Укажи значение или не передавай поле (будет Draft/Normal).",
+                )
+        labels = operation.get("labels")
+        if labels and labels != import_labels_for_zephyr():
             raise PlanRejected(
                 "PLAN_INVALID",
-                f"У {case_id} steps — список объектов с description, а не строк.",
+                f"У {case_id} labels при create не поддерживаются: MCP ставит только {import_labels_for_zephyr()}. "
+                "Убери labels из операции.",
             )
+    if operation.get("project_key") is not None and not _PROJECT_KEY.fullmatch(operation["project_key"]):
+        raise PlanRejected("PLAN_INVALID", f"У {case_id} недопустимый project_key.")
+    if "labels" in operation and operation["labels"] is not None:
+        labels = operation["labels"]
+        if not isinstance(labels, list) or any(not isinstance(label, str) for label in labels):
+            raise PlanRejected("PLAN_INVALID", f"У {case_id} labels — список строк.")
+    if "steps" in operation and operation["steps"] is not None:
+        _validate_steps(operation["steps"], case_id)
     if action in {"update", "delete"}:
         try:
             require_case_key(operation.get("test_case_key"))
         except UnsafeKey as exc:
             raise PlanRejected("PLAN_INVALID", str(exc)) from exc
+
+
+def _validate_steps(steps: Any, case_id: str) -> None:
+    if not isinstance(steps, list) or any(not isinstance(step, dict) for step in steps):
+        raise PlanRejected(
+            "PLAN_INVALID",
+            f"У {case_id} steps — список объектов с description, а не строк.",
+        )
+    for number, step in enumerate(steps, start=1):
+        unknown = sorted(set(step) - _STEP_KEYS)
+        if unknown:
+            raise PlanRejected("PLAN_INVALID", f"У {case_id} в шаге {number} неизвестные поля: {', '.join(unknown)}.")
+        description = step.get("description", step.get("step"))
+        if not isinstance(description, str) or not description.strip():
+            raise PlanRejected("PLAN_INVALID", f"У {case_id} в шаге {number} нужен непустой description.")
+        for field in ("testData", "test_data", "expectedResult", "expected_result"):
+            if step.get(field) is not None and not isinstance(step[field], str):
+                raise PlanRejected("PLAN_INVALID", f"У {case_id} в шаге {number} поле {field} должно быть строкой.")
+        if step.get("id") is not None and (isinstance(step["id"], bool) or not isinstance(step["id"], (int, str))):
+            raise PlanRejected("PLAN_INVALID", f"У {case_id} в шаге {number} id должен быть числом или строкой.")
 
 
 _STATUS_ALIASES = {
@@ -131,43 +177,77 @@ _STATUS_ALIASES = {
 }
 
 
-def adapt_plan(plan: dict[str, Any]) -> dict[str, Any]:
-    """Приводит пример dedupe-plan и черновик к контракту validate_plan."""
+def adapt_plan(plan: dict[str, Any], draft: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Приводит dedupe-plan (operations или items) и черновик к контракту validate_plan.
+
+    draft — объект черновика { run_id, revision, cases[] }. Содержимое кейса (шаги, тестовые данные,
+    ожидания, предусловия, папка, статус, приоритет) берётся из черновика по case_id/draft_id,
+    если в операции его нет.
+    """
     if not isinstance(plan, dict):
         return plan
     adapted = dict(plan)
     status = adapted.get("search_status")
     if isinstance(status, str) and status in _STATUS_ALIASES:
         adapted["search_status"] = _STATUS_ALIASES[status]
-    if not isinstance(adapted.get("operations"), list):
-        items = adapted.get("items")
-        if isinstance(items, list):
-            adapted["operations"] = [_adapt_item(item) for item in items]
-    else:
-        adapted["operations"] = [_adapt_item(item) for item in adapted["operations"]]
+    raw_operations = adapted.get("operations")
+    if not isinstance(raw_operations, list):
+        raw_operations = adapted.get("items")
+    if isinstance(raw_operations, list):
+        cases = _draft_cases(adapted, draft)
+        adapted["operations"] = [_adapt_item(item, cases) for item in raw_operations]
+        adapted.pop("items", None)
     return adapted
 
 
+def _draft_cases(plan: dict[str, Any], draft: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    if draft is None:
+        return {}
+    if not isinstance(draft, dict) or not isinstance(draft.get("cases"), list):
+        raise PlanRejected("PLAN_INVALID", "draft должен быть объектом черновика с cases[].")
+    if plan.get("run_id") and draft.get("run_id") and plan["run_id"] != draft["run_id"]:
+        raise PlanRejected("DRAFT_MISMATCH", "run_id плана и черновика различаются.")
+    if plan.get("draft_revision") is not None and draft.get("revision") != plan.get("draft_revision"):
+        raise PlanRejected("DRAFT_MISMATCH", "draft_revision плана не совпадает с revision черновика.")
+    cases: dict[str, dict[str, Any]] = {}
+    for case in draft["cases"]:
+        if isinstance(case, dict) and case.get("draft_id") is not None:
+            cases[str(case["draft_id"])] = case
+    return cases
+
+
 def adapt_draft_steps(case: dict[str, Any]) -> list[dict[str, Any]]:
+    """Строки steps черновика + test_data + expected_results одной длины → шаги Zephyr."""
     steps = case.get("steps") or []
-    if not isinstance(steps, list):
+    if not isinstance(steps, list) or not steps:
         return []
-    if steps and isinstance(steps[0], dict):
-        return [step for step in steps if isinstance(step, dict)]
+    if all(isinstance(step, dict) for step in steps):
+        return list(steps)
+    if not all(isinstance(step, str) for step in steps):
+        raise PlanRejected("PLAN_INVALID", "steps черновика смешивают строки и объекты.")
     data = case.get("test_data") or []
     expected = case.get("expected_results") or []
+    for name, values in (("test_data", data), ("expected_results", expected)):
+        if values and len(values) != len(steps):
+            raise PlanRejected(
+                "PLAN_INVALID",
+                f"У кейса {case.get('draft_id') or case.get('case_id')} {name} и steps разной длины.",
+            )
     structured: list[dict[str, Any]] = []
     for index, description in enumerate(steps):
-        item: dict[str, Any] = {"description": str(description)}
-        if index < len(data) and data[index] not in (None, "", "—"):
-            item["testData"] = data[index]
-        if index < len(expected) and expected[index] is not None:
-            item["expectedResult"] = expected[index]
+        item: dict[str, Any] = {"description": description}
+        if data and data[index] not in (None, "", "—"):
+            item["testData"] = str(data[index])
+        if expected and expected[index] not in (None, ""):
+            item["expectedResult"] = str(expected[index])
         structured.append(item)
     return structured
 
 
-def _adapt_item(item: Any) -> Any:
+_DRAFT_ONLY_KEYS = ("draft_id", "draft_name", "target_key", "preconditions", "test_data", "expected_results")
+
+
+def _adapt_item(item: Any, cases: dict[str, dict[str, Any]] | None = None) -> Any:
     if not isinstance(item, dict):
         return item
     operation = dict(item)
@@ -177,11 +257,34 @@ def _adapt_item(item: Any) -> Any:
         operation["name"] = operation["draft_name"]
     if not operation.get("test_case_key") and operation.get("target_key"):
         operation["test_case_key"] = operation["target_key"]
-    if isinstance(operation.get("steps"), list) and operation["steps"] and isinstance(operation["steps"][0], str):
+    case = (cases or {}).get(str(operation.get("case_id") or ""))
+    action = effective_action(operation)
+    if case is not None and action in {"create", "update"}:
+        _fill_from_draft(operation, case, action)
+    if isinstance(operation.get("steps"), list) and any(isinstance(step, str) for step in operation["steps"]):
         operation["steps"] = adapt_draft_steps(operation)
     if operation.get("precondition") is None and isinstance(operation.get("preconditions"), list):
         operation["precondition"] = "\n".join(str(line) for line in operation["preconditions"])
+    for key in _DRAFT_ONLY_KEYS:
+        operation.pop(key, None)
     return operation
+
+
+def _fill_from_draft(operation: dict[str, Any], case: dict[str, Any], action: str) -> None:
+    if not operation.get("name") and case.get("name"):
+        operation["name"] = case["name"]
+    if operation.get("steps") is None and case.get("steps") is not None:
+        operation["steps"] = adapt_draft_steps(case)
+    if operation.get("precondition") is None and operation.get("preconditions") is None:
+        lines = case.get("preconditions")
+        if isinstance(lines, list) and lines:
+            operation["precondition"] = "\n".join(str(line) for line in lines)
+        elif isinstance(case.get("precondition"), str):
+            operation["precondition"] = case["precondition"]
+    if action == "create":
+        for field in ("folder", "status", "priority"):
+            if operation.get(field) is None and case.get(field):
+                operation[field] = case[field]
 
 
 def plan_hash(plan: dict[str, Any], *, target: dict[str, str] | None = None) -> str:
@@ -267,6 +370,10 @@ def _step_text(step: dict[str, Any]) -> tuple[str, str, str]:
     return (norm(description), norm(test_data), norm(expected))
 
 
+def _view_step(step: dict[str, Any]) -> dict[str, Any]:
+    return {key: agent_view(value) if isinstance(value, str) else value for key, value in step.items()}
+
+
 def merge_steps_for_update(
     remote_steps: list[dict[str, Any]],
     draft_steps: list[dict[str, Any]],
@@ -287,7 +394,7 @@ def merge_steps_for_update(
             continue
         signature = _step_text(step)
         for remote_index, remote_step in enumerate(remote):
-            if remote_index in used or _step_text(remote_step) != signature:
+            if remote_index in used or signature not in {_step_text(remote_step), _step_text(_view_step(remote_step))}:
                 continue
             paired[draft_index] = remote_index
             used.add(remote_index)
@@ -299,16 +406,25 @@ def merge_steps_for_update(
             paired[draft_index] = remote_index
     merged: list[dict[str, Any]] = []
     for draft_index, step in enumerate(draft):
-        item: dict[str, Any] = {"description": step.get("description") or step.get("step") or ""}
+        remote_index = paired[draft_index]
+        remote_step = remote[remote_index] if remote_index is not None else {}
+        item: dict[str, Any] = {
+            "description": _published(
+                step.get("description") or step.get("step") or "",
+                remote_step.get("description"),
+                what=f"шаг {draft_index + 1}: description",
+            )
+        }
         test_data = step.get("testData", step.get("test_data"))
         expected = step.get("expectedResult", step.get("expected_result"))
         if test_data is not None:
-            item["testData"] = test_data
+            item["testData"] = _published(test_data, remote_step.get("testData"), what=f"шаг {draft_index + 1}: testData")
         if expected is not None:
-            item["expectedResult"] = expected
-        remote_index = paired[draft_index]
-        if remote_index is not None and remote[remote_index].get("id") is not None:
-            item["id"] = remote[remote_index]["id"]
+            item["expectedResult"] = _published(
+                expected, remote_step.get("expectedResult"), what=f"шаг {draft_index + 1}: expectedResult"
+            )
+        if remote_step.get("id") is not None:
+            item["id"] = remote_step["id"]
         merged.append(item)
     return merged
 
@@ -319,16 +435,19 @@ def _exact(value: Any) -> str:
     return str(value)
 
 
-def _same_published_value(draft: Any, remote: Any) -> bool:
+def _published(draft: Any, remote: Any, *, what: str) -> Any:
+    """Значение для записи. Неизменённое скрытое (маскированное/усечённое) поле берётся из Zephyr как есть."""
+    if not isinstance(remote, str) or not is_hidden_in_agent_view(remote):
+        return draft
     left = _exact(draft)
-    right = _exact(remote)
-    if left == right:
-        return True
-    if left == "[secret]":
-        return True
-    if left.endswith("…") and right.startswith(left[:-1]):
-        return True
-    return False
+    if left == agent_view(remote):
+        return remote
+    if SECRET_PLACEHOLDER in left or left.endswith("…"):
+        raise MaskedFieldEdit(
+            f"{what}: поле в Zephyr скрыто маскированием или усечением, а правка содержит видимый фрагмент. "
+            "Перепиши поле целиком без [secret] и «…» или оставь его без изменений."
+        )
+    return draft
 
 
 def _step_exact(step: dict[str, Any]) -> tuple[str, str, str]:
@@ -358,8 +477,9 @@ def update_changes(operation: dict[str, Any], remote: dict[str, Any]) -> dict[st
     for field in ("name", "objective", "folder", "status", "priority", "precondition"):
         if field not in operation or operation[field] is None:
             continue
-        if not _same_published_value(operation[field], data.get(field)):
-            changes[field] = operation[field]
+        value = _published(operation[field], data.get(field), what=field)
+        if _exact(value) != _exact(data.get(field)):
+            changes[field] = value
     if operation.get("labels") is not None:
         want = [str(x).strip() for x in operation["labels"] if str(x).strip()]
         have = [str(x).strip() for x in (data.get("labels") or []) if str(x).strip()]
@@ -438,6 +558,13 @@ def _step_score(draft_steps: list[dict[str, Any]], candidate_steps: list[dict[st
     return total / max(len(draft_steps), len(candidate_steps)), notes
 
 
+def _draft_precondition(case: dict[str, Any]) -> str:
+    lines = case.get("preconditions")
+    if isinstance(lines, list):
+        return "\n".join(str(line) for line in lines)
+    return _exact(case.get("precondition"))
+
+
 def match_candidates(index_items: list[dict[str, Any]], cases: list[dict[str, Any]]) -> dict[str, Any]:
     results: list[dict[str, Any]] = []
     for case in cases:
@@ -447,6 +574,10 @@ def match_candidates(index_items: list[dict[str, Any]], cases: list[dict[str, An
         if not phrases and case.get("name"):
             phrases = [str(case["name"])]
         case_id = case.get("case_id") or case.get("draft_id")
+        try:
+            draft_steps = adapt_draft_steps(case)
+        except PlanRejected:
+            draft_steps = []
         ranked: list[dict[str, Any]] = []
         step_notes: list[str] = []
         for item in index_items:
@@ -459,9 +590,12 @@ def match_candidates(index_items: list[dict[str, Any]], cases: list[dict[str, An
                 "name": item.get("name"),
                 "name_score": 1.0 if exact_name else round(name_score, 4),
             }
-            if case.get("steps") and item.get("steps"):
-                score, notes = _step_score(case["steps"], item["steps"])
+            candidate_steps = [step for step in item.get("steps") or [] if isinstance(step, dict)]
+            if draft_steps and candidate_steps:
+                score, notes = _step_score(draft_steps, candidate_steps)
                 row["step_score"] = round(score, 4)
+                if _draft_precondition(case) != _exact(item.get("precondition")):
+                    notes = [*notes, "предусловия отличаются"]
                 if notes and not step_notes:
                     step_notes = notes
             ranked.append(row)
@@ -510,8 +644,8 @@ def extract_search_page(response: dict[str, Any]) -> tuple[list[dict[str, Any]] 
         return None, None
     items: list[dict[str, Any]] = []
     for row in rows:
-        if not isinstance(row, dict):
-            continue
+        if not isinstance(row, dict) or not (row.get("key") or row.get("testCaseKey")):
+            return None, None
         items.append(
             {
                 "key": row.get("key") or row.get("testCaseKey"),
