@@ -11,26 +11,51 @@ apply (create/update) в Zephyr Scale.
 
 **Scope v0.3:** materials, doc review, testcases, Zephyr dedupe/apply.
 
-## Установка плагина
+## Установка плагина (рекомендуется: скрипт или git clone)
 
-1. **Team marketplace:** Dashboard → Plugins → marketplace → **Refresh** → в IDE: Customize → Plugins → **TGS QA Cursor**.
-2. **Локально:** каталог `plugins/tgs-qa-cursor` → `~/.cursor/plugins/local/tgs-qa-cursor` (или symlink) → Reload Window.
+**Скрипт** делает за вас: clone (или текущий репо), junction в `~/.cursor/plugins/local/`, зависимости MCP (`uv` или venv+pip), опционально шаблон `config.json`.
+
+```powershell
+git clone https://github.com/jansonnr/tgs_qa_plugin.git C:\tools\tgs_qa_plugin
+cd C:\tools\tgs_qa_plugin
+.\scripts\install-tgs-qa-cursor.ps1 -UseThisRepo -WriteConfigTemplate
+```
+
+Параметры: `-CloneDir` (куда клонировать без `-UseThisRepo`), `-ForceJunction` (пересоздать link), `-SkipMcpDeps`, `-WriteConfigTemplate`. Подробности — комментарии в [scripts/install-tgs-qa-cursor.ps1](scripts/install-tgs-qa-cursor.ps1).
+
+**Вручную:** junction `plugins/tgs-qa-cursor` → `%USERPROFILE%\.cursor\plugins\local\tgs-qa-cursor` → Reload Window.
+
+**Team marketplace** (опционально): Dashboard → Refresh → Plugins в IDE. Минус — кэш `marketplaces\...\<commit>\`, нестабильный путь для venv.
 
 Отдельно MCP в Settings добавлять **не нужно** — сервер **zephyr-scale** идёт из `plugin.json` плагина.
 
 ## Python для MCP
 
-MCP — Python-процесс из [plugins/tgs-qa-cursor/zephyr-scale-mcp/](plugins/tgs-qa-cursor/zephyr-scale-mcp/). Зависимости на машине ставит пользователь:
+MCP — Python-проект **`zephyr-scale-mcp`** (там `pyproject.toml`). Каталог **`plugins/tgs-qa-cursor`** сам по себе не Python-пакет — `pip install -e .` из него даст ошибку «no setup.py nor pyproject.toml».
+
+После установки плагина из marketplace путь обычно такой:
+
+`%USERPROFILE%\.cursor\plugins\marketplaces\github.com\jansonnr\tgs_qa_plugin\<commit>\plugins\tgs-qa-cursor\zephyr-scale-mcp`
+
+(точный `<commit>` смотри в проводнике; при Refresh marketplace hash меняется — venv лучше держать в **своём** клоне репо или заново ставить после смены hash).
 
 ```powershell
-cd plugins\tgs-qa-cursor\zephyr-scale-mcp
+cd ...\plugins\tgs-qa-cursor\zephyr-scale-mcp
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .
 ```
 
-Если системный `python` не видит пакет — в `%USERPROFILE%\.cursor\mcp.json` укажите полный путь к
-`.venv\Scripts\python.exe` и те же `cwd` / `PYTHONPATH`, что в
-[plugins/tgs-qa-cursor/mcp.example.json](plugins/tgs-qa-cursor/mcp.example.json) (это замена команды запуска, не второй MCP).
+Из git-клона:
+
+```powershell
+cd C:\path\to\tgs_qa_plugin\plugins\tgs-qa-cursor\zephyr-scale-mcp
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e .
+```
+
+Если системный `python` из плагина не видит пакет — в `%USERPROFILE%\.cursor\mcp.json` укажите полный путь к
+`...\zephyr-scale-mcp\.venv\Scripts\python.exe`, `cwd` = `...\zephyr-scale-mcp`, `PYTHONPATH` = `...\zephyr-scale-mcp\src`
+(см. [mcp.example.json](plugins/tgs-qa-cursor/mcp.example.json)).
 
 ## Доступ к Jira / Zephyr / Confluence (вручную)
 
