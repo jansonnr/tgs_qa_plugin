@@ -11,9 +11,7 @@ apply (create/update) в Zephyr Scale.
 
 **Scope v0.3:** materials, doc review, testcases, Zephyr dedupe/apply.
 
-## Установка плагина (рекомендуется: скрипт или git clone)
-
-**Скрипт** делает за вас: clone (или текущий репо), junction в `~/.cursor/plugins/local/`, зависимости MCP (`uv` или venv+pip), опционально шаблон `config.json`.
+## Установка (рекомендуется)
 
 ```powershell
 git clone https://github.com/jansonnr/tgs_qa_plugin.git C:\tools\tgs_qa_plugin
@@ -21,31 +19,21 @@ cd C:\tools\tgs_qa_plugin
 .\scripts\install-tgs-qa-cursor.ps1 -UseThisRepo -WriteConfigTemplate
 ```
 
-Параметры: `-CloneDir` (куда клонировать без `-UseThisRepo`), `-ForceJunction` (пересоздать link), `-SkipMcpDeps`, `-WriteConfigTemplate`. Подробности — комментарии в [scripts/install-tgs-qa-cursor.ps1](scripts/install-tgs-qa-cursor.ps1).
+Скрипт сам: **junction** `plugins/tgs-qa-cursor` → `%USERPROFILE%\.cursor\plugins\local\tgs-qa-cursor`, зависимости MCP (`uv` или venv+pip), опционально шаблон `config.json`. Дальше: Reload Window → Customize → Plugins → **TGS QA Cursor**.
 
-**Вручную:** junction `plugins/tgs-qa-cursor` → `%USERPROFILE%\.cursor\plugins\local\tgs-qa-cursor` → Reload Window.
+Параметры: `-CloneDir`, `-ForceJunction`, `-SkipMcpDeps`, `-WriteConfigTemplate` — см. [scripts/install-tgs-qa-cursor.ps1](scripts/install-tgs-qa-cursor.ps1).
 
-**Team marketplace** (опционально): Dashboard → Refresh → Plugins в IDE. Минус — кэш `marketplaces\...\<commit>\`, нестабильный путь для venv.
+**Без скрипта** (то же самое руками): junction как выше → MCP в каталоге `plugins/tgs-qa-cursor/zephyr-scale-mcp` (см. [zephyr-scale-mcp/README.md](plugins/tgs-qa-cursor/zephyr-scale-mcp/README.md)) → Reload Window.
 
-Отдельно MCP в Settings добавлять **не нужно** — сервер **zephyr-scale** идёт из `plugin.json` плагина.
+**Team marketplace** (опционально, без clone): Dashboard → Refresh → Plugins в IDE. Не рекомендуется для MCP: путь `marketplaces\...\<commit>\` меняется при Refresh.
+
+MCP в Settings отдельно **не** добавляют — сервер **zephyr-scale** из `plugin.json` плагина.
 
 ## Python для MCP
 
-MCP — Python-проект **`zephyr-scale-mcp`** (там `pyproject.toml`). Каталог **`plugins/tgs-qa-cursor`** сам по себе не Python-пакет — `pip install -e .` из него даст ошибку «no setup.py nor pyproject.toml».
+Если ставили через **скрипт**, venv/`uv` уже настроены. Этот раздел — для ручной установки или отладки.
 
-После установки плагина из marketplace путь обычно такой:
-
-`%USERPROFILE%\.cursor\plugins\marketplaces\github.com\jansonnr\tgs_qa_plugin\<commit>\plugins\tgs-qa-cursor\zephyr-scale-mcp`
-
-(точный `<commit>` смотри в проводнике; при Refresh marketplace hash меняется — venv лучше держать в **своём** клоне репо или заново ставить после смены hash).
-
-```powershell
-cd ...\plugins\tgs-qa-cursor\zephyr-scale-mcp
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e .
-```
-
-Из git-клона:
+MCP — проект **`zephyr-scale-mcp`** (`pyproject.toml`). **`pip install -e .` из `plugins/tgs-qa-cursor`** не сработает (нет `pyproject.toml` в корне плагина).
 
 ```powershell
 cd C:\path\to\tgs_qa_plugin\plugins\tgs-qa-cursor\zephyr-scale-mcp
