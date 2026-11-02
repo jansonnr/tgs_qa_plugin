@@ -63,8 +63,8 @@ flowchart LR
 
 | Проверка | Где | При отказе | Обход |
 | --- | --- | --- | --- |
-| Форма JSON и обязательные поля перед mutate | Агент, чеклист `/qa-apply-zephyr` | MCP не вызывать | Агент может проигнорировать skill. Отдельной команды валидации нет (она остаётся в фазе 1.1) |
-| Запись в TMS только из apply | Инструкция skills: `create_test_case` / `update_test_case` только внутри `/qa-apply-zephyr` | Не вызывать tool | Агент может вызвать tool напрямую |
+| Форма JSON и обязательные поля перед mutate | Агент, чеклист `/import-in-zephyr` | MCP не вызывать | Агент может проигнорировать skill. Отдельной команды валидации нет (она остаётся в фазе 1.1) |
+| Запись в TMS только из apply | Инструкция skills: `create_test_case` / `update_test_case` только внутри `/import-in-zephyr` | Не вызывать tool | Агент может вызвать tool напрямую |
 | Согласие человека | Фраза в чате после preview. Дополнительный канал, которым агент не управляет, — карточка одобрения вызова MCP в Cursor | Нет фразы или нет одобрения карточки — записи нет | Если у пользователя включён auto-run инструментов, карточки нет: фразу может имитировать сам агент. Это граница гарантии MVP, не «защищённая запись» |
 | Токен и прямой HTTP | Токен только в конфиге MCP через `set_credentials` | Skills не читают конфиг и не печатают токен | Агент с терминалом может прочитать конфиг и вызвать API мимо MCP. Плагин этот путь не закрывает |
 | Нужные tools MCP | Перед шагом агент сверяет список tools с [MCP-EXTEND.md](MCP-EXTEND.md) | Stop, в чат — имя отсутствующего tool | Проверки версии протокола нет: критерий — наличие tool |
@@ -77,13 +77,13 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-  M["/qa-materials"]
-  D["/qa-doc-review\n(опционально)"]
-  T["/qa-testcases"]
-  AN["/qa-anchors\nconfirm якорей"]
-  SI["/qa-zephyr-sync-index"]
-  DE["/qa-dedupe"]
-  AP["/qa-apply-zephyr\nпосле «да, применить»"]
+  M["/get-confluence-page"]
+  D["/review-user-story\n(опционально)"]
+  T["/create-test-case"]
+  AN["/key-words\nconfirm якорей"]
+  SI["/search-by-keyword"]
+  DE["/compare-test-case-for-dedupe"]
+  AP["/import-in-zephyr\nпосле «да, применить»"]
 
   M --> D
   M --> T
@@ -101,8 +101,8 @@ flowchart TD
 **Одна активная задача.** В workspace один `materials/manifest.json`. Новый источник с другим ключом Jira не дописывается молча: QA выбирает замену набора материалов или остановку. Одновременная работа двух чатов с одним apply не поддерживается.
 
 **Правило потока:** вызовы Zephyr **search** и dedupe **блокируются**, пока якоря не
-подтверждены на этапе **`/qa-anchors`** (после черновика кейсов). Область поиска
-(`project_key`, `search_folders`) подтверждается отдельно, на `/qa-zephyr-select`.
+подтверждены на этапе **`/key-words`** (после черновика кейсов). Область поиска
+(`project_key`, `search_folders`) подтверждается отдельно, на `/select-folders`.
 Для dedupe нужны оба подтверждения.
 
 Как именно TMS ищет по фразам — открытый вопрос ревью п. 1. Пока он открыт, индекс с
@@ -113,17 +113,17 @@ flowchart TD
 ## 4. Жизненный цикл якорей dedupe
 
 Якоря нужны **только** для сужения поиска похожих кейсов в TMS, не для генерации черновика.
-QA на `/qa-anchors` подтверждает **фразы**. Папки он подтверждает на `/qa-zephyr-select`.
+QA на `/key-words` подтверждает **фразы**. Папки он подтверждает на `/select-folders`.
 
 ```mermaid
 stateDiagram-v2
-  [*] --> NoAnchors: /qa-materials
-  NoAnchors --> DraftReady: /qa-testcases
-  DraftReady --> Proposed: /qa-anchors предложение
+  [*] --> NoAnchors: /get-confluence-page
+  NoAnchors --> DraftReady: /create-test-case
+  DraftReady --> Proposed: /key-words предложение
   Proposed --> Proposed: QA правит список
   Proposed --> Confirmed: QA confirm
   Confirmed --> Stale: существенный draft
-  Stale --> Proposed: /qa-anchors снова
+  Stale --> Proposed: /key-words снова
   Confirmed --> TMS_OK: sync-index, dedupe
   NoAnchors --> TMS_OK: только browse/list folder\nбез search по якорям
 ```
@@ -132,7 +132,7 @@ stateDiagram-v2
 | --- | --- | --- |
 | После materials | `false` или поле отсутствует | materials, doc review, testcases |
 | После confirm anchors | `true` + `anchors_draft_run_id` + `anchors_draft_revision` | sync-index (search), dedupe, apply |
-| Черновик устарел существенно | `false` (сброс skill) | повтор `/qa-anchors` |
+| Черновик устарел существенно | `false` (сброс skill) | повтор `/key-words` |
 
 `anchors_draft_revision` — номер `revision` черновика в момент confirm. Dedupe разрешён,
 только если он совпадает с текущим `revision`. Несущественная правка (только `labels`,
@@ -181,9 +181,9 @@ flowchart TB
 
 | ID | Кто создаёт | Правило |
 | --- | --- | --- |
-| `run_id` черновика | `/qa-testcases` при новой генерации | `YYYYMMDD-<slug>`, slug — ключ Jira в нижнем регистре или короткое имя задачи. Refine тот же `run_id` не меняет |
-| `run_id` doc review | `/qa-doc-review` | Свой, не подменяет run черновика |
-| `draft_id` | `/qa-testcases` при добавлении кейса | Строка (`"1"`, `"2"`, …). Тот же id после переименования, перестановки и refine. Удалённый id в этом run не переиспользуется |
+| `run_id` черновика | `/create-test-case` при новой генерации | `YYYYMMDD-<slug>`, slug — ключ Jira в нижнем регистре или короткое имя задачи. Refine тот же `run_id` не меняет |
+| `run_id` doc review | `/review-user-story` | Свой, не подменяет run черновика |
+| `draft_id` | `/create-test-case` при добавлении кейса | Строка (`"1"`, `"2"`, …). Тот же id после переименования, перестановки и refine. Удалённый id в этом run не переиспользуется |
 | `revision` | Каждая запись канонического `<run-id>.json` | Целое с 1. Перед перезаписью текущий файл копируется в `<run-id>.v<revision>.json` |
 
 Новый запуск — новый `run_id` (генерация с нуля). Новая ревизия — тот же `run_id`, `revision + 1`.
@@ -243,12 +243,12 @@ flowchart TB
 | **FR-DOC-02** | Без RAG / knowledge base | qa-doc-review | — |
 | **FR-TC-01** | Генерация связного suite кейсов по materials (+ optional doc review) | qa-testcases | draft JSON+MD |
 | **FR-TC-02** | Формат кейса: steps/test_data/expected_results одной длины | qa-testcases | rule format |
-| **FR-TC-03** | После draft — направить на `/qa-anchors`, не на dedupe сразу | qa-testcases | — |
+| **FR-TC-03** | После draft — направить на `/key-words`, не на dedupe сразу | qa-testcases | — |
 | **FR-TC-04** | При существенной смене draft сбросить `search_anchors_confirmed` | qa-testcases | manifest |
 | **FR-ANC-01** | Якоря предлагать **из draft + materials** (3–10 фраз) | qa-anchors | manifest |
 | **FR-ANC-02** | Без confirm якорей **не** вызывать Zephyr search / dedupe | qa-anchors, qa-dedupe, qa-zephyr-cache | manifest |
 | **FR-ANC-03** | После confirm: `search_anchors_confirmed: true`, `anchors_draft_run_id`, `anchors_draft_revision` | qa-anchors | manifest |
-| **FR-ANC-04** | `/qa-materials` не запускает dedupe-search | qa-materials | — |
+| **FR-ANC-04** | `/get-confluence-page` не запускает dedupe-search | qa-materials | — |
 | **FR-ZEP-01** | Index-only cache (summary полей), не все testScript разом; флаг `complete` | qa-zephyr-cache | cache/ |
 | **FR-ZEP-02** | sync-index: search по якорям только если FR-ANC-03 выполнен | qa-zephyr-sync-index | cache/ |
 | **FR-ZEP-03** | Тело кандидата читать до решения update/skip и ещё раз перед preview и перед PUT | qa-dedupe, qa-zephyr-refresh, qa-apply-zephyr | cache/cases/ |
@@ -280,7 +280,7 @@ sequenceDiagram
   participant MCP
   participant QAfolder as .qa/materials
 
-  QA->>Agent: /qa-materials + Jira/Confluence
+  QA->>Agent: /get-confluence-page + Confluence
   Agent->>MCP: get issue / page
   MCP-->>Agent: тексты
   Agent->>QAfolder: *.json + manifest
@@ -306,7 +306,7 @@ flowchart LR
   M --> J
   DR --> J
   J --> MD
-  J --> ANC["/qa-anchors"]
+  J --> ANC["/key-words"]
 ```
 
 ### 7.3. Якоря (FR-ANC)
@@ -316,11 +316,11 @@ flowchart LR
 отфильтровать или пометить QA.
 
 **FR-ANC-02 (gate TMS):** при `search_anchors_confirmed !== true` skills `qa-dedupe` и
-sync-index с `search_test_cases` **останавливаются** с сообщением: выполните `/qa-anchors`
+sync-index с `search_test_cases` **останавливаются** с сообщением: выполните `/key-words`
 для `<run-id>`.
 
 **FR-ANC-03 (связь с черновиком):** `anchors_draft_run_id` и `anchors_draft_revision` MUST
-совпадать с черновиком, для которого выполняется `/qa-dedupe`, либо QA явно подтверждает
+совпадать с черновиком, для которого выполняется `/compare-test-case-for-dedupe`, либо QA явно подтверждает
 несовпадение в чате.
 
 Общий список из 3–10 фраз сужает область один раз. Дальше каждый кейс сравнивается со своим
@@ -417,7 +417,7 @@ fingerprint и к `draft_revision`. Любая смена ревизии, action
 не раньше `retry_after`. GET с коротким `Retry-After` (≤ 2 с) MCP повторяет сам. **401/403** останавливают пачку сразу.
 Остальные ошибки пункта пачку не останавливают (FR-PUB-04).
 
-Повторный запуск `/qa-apply-zephyr` продолжает тот же журнал: `ok` не трогать. Для хвоста `pending`
+Повторный запуск `/import-in-zephyr` продолжает тот же журнал: `ok` не трогать. Для хвоста `pending`
 достаточно «продолжить», если fingerprint и ревизия те же. `unknown` в этот хвост не входит.
 
 В MVP один пункт — один запрос create или update. Отдельного комментария или второго запроса на шаги нет.
@@ -428,24 +428,24 @@ fingerprint и к `draft_revision`. Любая смена ревизии, action
 
 | Группа | Команды |
 | --- | --- |
-| Базовые | `/qa-help`, `/qa-materials`, `/qa-doc-review`, `/qa-testcases`, **`/qa-anchors`** |
-| Zephyr | `/qa-zephyr-browse`, `/qa-zephyr-select`, `/qa-zephyr-sync-index`, `/qa-zephyr-refresh`, `/qa-dedupe`, `/qa-apply-zephyr` |
+| Базовые | `/qa-help`, `/get-confluence-page`, `/review-user-story`, `/create-test-case`, **`/key-words`** |
+| Zephyr | `/search-test-case-in-zephyr`, `/select-folders`, `/search-by-keyword`, `/update-test-case`, `/compare-test-case-for-dedupe`, `/import-in-zephyr` |
 
 ```mermaid
 flowchart LR
   subgraph phase1["Подготовка"]
     help[qa-help]
-    mat[qa-materials]
-    doc[qa-doc-review]
-    tc[qa-testcases]
+    mat[get-confluence-page]
+    doc[review-user-story]
+    tc[create-test-case]
   end
   subgraph phase2["TMS scope"]
-    anc[qa-anchors]
+    anc[key-words]
   end
   subgraph phase3["Zephyr"]
-    sync[sync-index]
-    ded[dedupe]
-    app[apply-zephyr]
+    sync[search-by-keyword]
+    ded[compare-test-case-for-dedupe]
+    app[import-in-zephyr]
   end
   mat --> tc
   doc --> tc
@@ -462,7 +462,7 @@ flowchart LR
 | ID | Требование |
 | --- | --- |
 | FR-PRM-01 | `prompts/_source-trust.md` — во всех сценариях |
-| FR-PRM-02 | `prompts/anchors.md` — только `/qa-anchors` |
+| FR-PRM-02 | `prompts/anchors.md` — только `/key-words` |
 | FR-PRM-03 | `prompts/testcases-base.md`, `testcases.md`, `testcases-refine.md` — генерация/refine; overlay в `.qa/prompts/` |
 | FR-PRM-04 | `prompts/doc-review.md`, `dedupe-match.md`, `apply-zephyr.md` |
 
@@ -484,7 +484,7 @@ flowchart LR
 | 4 | RAG / KB — нет |
 | 5 | Лимиты TGS — нет |
 | 6 | Test run — нет |
-| 7 | **Якоря после testcases** (`/qa-anchors`) |
+| 7 | **Якоря после testcases** (`/key-words`) |
 | 8 | Одна активная задача на workspace |
 | 9 | Сильное совпадение → `ask`, не автоматический `update` |
 | 10 | Нерешённый `ask` блокирует весь apply |
@@ -507,7 +507,7 @@ Gap MCP: `update_test_case`, `list_folder_test_cases`, `get_jira_issue`, `list_p
 Индекс хранит флаг `complete`. Агент ставит `complete: false`, если выгрузка оборвалась, вернула ошибку
 или агент не уверен, что список полный. Алгоритм обхода страниц и вложенных папок этой версией не задаётся.
 
-Запись живых кейсов — только в папку, которую QA выбрал через `/qa-zephyr-select` как тестовую.
+Запись живых кейсов — только в папку, которую QA выбрал через `/select-folders` как тестовую.
 Удаления в MVP нет: созданные кейсы убирает QA вручную.
 
 ---
@@ -516,7 +516,7 @@ Gap MCP: `update_test_case`, `list_folder_test_cases`, `get_jira_issue`, `list_p
 
 | # | Проверка | FR |
 | --- | --- | --- |
-| 1 | После materials якоря не обязательны; после `/qa-anchors` — confirmed и revision | FR-MAT-03, FR-ANC-03 |
+| 1 | После materials якоря не обязательны; после `/key-words` — confirmed и revision | FR-MAT-03, FR-ANC-03 |
 | 2 | Doc review опционально + draft testcases | FR-DOC-01, FR-TC-01 |
 | 3 | sync-index без полных testScript всех кейсов; неполный индекс помечен | FR-ZEP-01 |
 | 4 | dedupe-plan с create/update/skip/ask; ошибка поиска не даёт create | FR-DED-01, FR-DED-05 |

@@ -88,16 +88,16 @@ py -3.12 -m venv .venv
 .qa/cache/
 ```
 
-Первый сценарий: `/qa-materials` → `/qa-testcases` → **`/qa-anchors`** → `/qa-zephyr-select` → `/qa-zephyr-sync-index` → `/qa-dedupe` → preview → «да, применить» → `/qa-apply-zephyr`.
+Первый сценарий: `/get-confluence-page` → `/create-test-case` → **`/key-words`** → `/select-folders` → `/search-by-keyword` → `/compare-test-case-for-dedupe` → preview → «да, применить» → `/import-in-zephyr`.
 
 ## Команды
 
 | Этап | Slash |
 | --- | --- |
 | Справка | `/qa-help` |
-| Материалы → кейсы | `/qa-materials`, `/qa-doc-review`, `/qa-testcases` |
-| Якоря dedupe | `/qa-anchors` |
-| Zephyr | `/qa-zephyr-browse`, `/qa-zephyr-select`, `/qa-zephyr-sync-index`, `/qa-zephyr-refresh`, `/qa-dedupe`, `/qa-apply-zephyr` |
+| Постановка → кейсы | `/get-confluence-page`, `/review-user-story`, `/create-test-case` |
+| Ключевые слова | `/key-words` |
+| Zephyr | `/search-test-case-in-zephyr`, `/select-folders`, `/search-by-keyword`, `/update-test-case`, `/compare-test-case-for-dedupe`, `/import-in-zephyr` |
 
 Промпты: [plugins/tgs-qa-cursor/prompts/](plugins/tgs-qa-cursor/prompts/). Примеры JSON: [plugins/tgs-qa-cursor/schemas/](plugins/tgs-qa-cursor/schemas/). Контракт MCP: [docs/MCP-EXTEND.md](docs/MCP-EXTEND.md).
 

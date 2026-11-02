@@ -1,6 +1,6 @@
 ---
 name: qa-zephyr-cache
-description: Browse Zephyr folders, select TMS scope in manifest, sync index-only cache, refresh selected case bodies. Uses MCP user-zephyr-scale.
+description: Zephyr cache for /search-test-case-in-zephyr, /select-folders, /search-by-keyword, /update-test-case. Uses MCP user-zephyr-scale.
 ---
 
 # Zephyr cache
@@ -27,7 +27,7 @@ Gap: `get_jira_issue`, `list_folder_test_cases`, `update_test_case` — см. [M
 - `project_key` из manifest или от пользователя.
 - `get_folder_tree` → показать дерево на русском (id, path, name).
 - **Не** вызывать `search_test_cases` по якорям.
-- Предложить `/qa-zephyr-select` или sync-index после `/qa-anchors`.
+- Предложить `/select-folders` или `/search-by-keyword` после `/key-words`.
 
 ## select
 
@@ -39,9 +39,9 @@ Gap: `get_jira_issue`, `list_folder_test_cases`, `update_test_case` — см. [M
 
 - Если `list_folder_test_cases` или `search_test_cases` нет в сессии — **stop** и назови отсутствующий tool.
 - Перед **`search_test_cases` по `search_anchors`**: manifest MUST have
-  `search_anchors_confirmed: true`. Иначе **stop** → `/qa-anchors`.
+  `search_anchors_confirmed: true`. Иначе **stop** → `/key-words`.
 - `anchors_draft_run_id` и `anchors_draft_revision` MUST совпадать с черновиком; при расхождении — спросить QA.
-- `search_folders` и `project_key` MUST быть заданы; иначе **stop** → `/qa-zephyr-select`.
+- `search_folders` и `project_key` MUST быть заданы; иначе **stop** → `/select-folders`.
 - Набор кейсов: `list_folder_test_cases` в scope `search_folders` и/или узкий `search_test_cases` по якорям.
   Как гарантировать все страницы и вложенные папки — открытый вопрос ревью п. 1; не выдумывай полноту.
 - **Не** один запрос на весь проект с огромным `maxResults`.

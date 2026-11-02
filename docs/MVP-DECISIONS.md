@@ -6,7 +6,7 @@
 
 | Включено | Исключено |
 | --- | --- |
-| Materials; якоря **после** testcases (`/qa-anchors`) | Рецензия кейсов Zephyr (`/qa-case-review`) |
+| Materials; якоря **после** testcases (`/key-words`) | Рецензия кейсов Zephyr (`/qa-case-review`) |
 | Doc review | API-тесты / Postman |
 | Генерация черновика | База знаний, RAG, `--with-knowledge` |
 | Dedupe + apply (create/update) | Test run, last test result |
@@ -64,4 +64,4 @@ Team marketplace и Required rules для Cursor Teams — **вне MVP**; до�
 
 ## v0.3.2
 
-- Якоря dedupe перенесены с `/qa-materials` на этап после `/qa-testcases` (`/qa-anchors`).
+- Якоря dedupe перенесены с `/qa-materials` на этап после `/qa-testcases` (`/key-words`).

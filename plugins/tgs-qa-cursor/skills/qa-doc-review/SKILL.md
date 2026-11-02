@@ -1,6 +1,6 @@
 ---
 name: qa-doc-review
-description: Binary review of task specs (постановки, P1–P6) from .qa materials to reviews/doc JSON and Markdown.
+description: Ревью user story / постановки (П1–P6) from .qa materials (/review-user-story). Output reviews/doc JSON and Markdown.
 ---
 
 # Doc review

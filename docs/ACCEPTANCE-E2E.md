@@ -1,22 +1,22 @@
 # E2E приёмка MVP (одна Jira-задача)
 
 **Предусловия:** Cursor с плагином; MCP `user-zephyr-scale` с credentials; тестовый
-`project_key` и папка, выбранные через `/qa-zephyr-select` (не боевой регресс).
+`project_key` и папка, выбранные через `/select-folders` (не боевой регресс).
 Модель с достаточным контекстом. Созданные кейсы удаляет QA вручную: DELETE в MVP нет.
 
 Наблюдаемый результат FR — файл из [REQUIREMENTS.md](REQUIREMENTS.md) §6 или явный stop в чате.
 
 ## Успешный сценарий
 
-1. **Материалы** — `/qa-materials`: ключ Jira + одна страница Confluence →
+1. **Постановка** — `/get-confluence-page`: одна страница Confluence (и при необходимости ключ Jira) →
    `.qa/materials/manifest.json` (якоря **не** обязательны). Второй ключ Jira не дописывается молча.
-2. **Doc review** (опционально) — `/qa-doc-review` → `.qa/reviews/doc/<run-id>.json` + `.md`.
-3. **Кейсы** — `/qa-testcases` → `.qa/drafts/testcases/<run-id>.json` (обёртка `run_id`, `revision`, `cases`, ≥5 кейсов).
-4. **Якоря** — `/qa-anchors`: предложение из черновика + материалов → QA подтверждает фразы →
+2. **Doc review** (опционально) — `/review-user-story` → `.qa/reviews/doc/<run-id>.json` + `.md`.
+3. **Кейсы** — `/create-test-case` → `.qa/drafts/testcases/<run-id>.json` (обёртка `run_id`, `revision`, `cases`, ≥5 кейсов).
+4. **Якоря** — `/key-words`: предложение из черновика + материалов → QA подтверждает фразы →
    `search_anchors_confirmed: true`, `anchors_draft_run_id`, `anchors_draft_revision`.
-5. **Папки** — `/qa-zephyr-select`: QA подтверждает `project_key` и `search_folders`.
-6. **Index TMS** — `/qa-zephyr-sync-index` → index без полных testScript и с полем `complete`.
-7. **Dedupe** — `/qa-dedupe` → `<run-id>.dedupe-plan.json`. При кандидате действие `ask`, не сразу `update`.
+5. **Папки** — `/select-folders`: QA подтверждает `project_key` и `search_folders`.
+6. **Index TMS** — `/search-by-keyword` → index без полных testScript и с полем `complete`.
+7. **Dedupe** — `/compare-test-case-for-dedupe` → `<run-id>.dedupe-plan.json`. При кандидате действие `ask`, не сразу `update`.
    QA переводит нужные строки в `update` или `skip`.
 8. **Apply** — preview с folder, status, priority и fingerprint; QA пишет «да, применить».
    Если шаги update отличаются от кейса в TMS — ещё «заменить шаги».
@@ -34,7 +34,7 @@
 | Условия | Действие | Ожидаемый результат |
 | --- | --- | --- |
 | Черновик изменён после preview (`revision` или fingerprint) | apply | Записи нет, агент просит новый preview |
-| Create ушёл, ответ потерян (таймаут, 5xx, пусто) | повторный `/qa-apply-zephyr` | Пункт `unknown`; новый POST не отправляется, пока QA не сверит кейс |
+| Create ушёл, ответ потерян (таймаут, 5xx, пусто) | повторный `/import-in-zephyr` | Пункт `unknown`; новый POST не отправляется, пока QA не сверит кейс |
 | Поиск или индекс с ошибкой, `complete: false` | dedupe | Нет формулировки «дублей нет» и нет `action: create` |
 | В плане остался `ask` | apply | Apply не начинается |
 | Два пункта с одним `target_key` | apply | Оба не записываются, пока конфликт не снят |

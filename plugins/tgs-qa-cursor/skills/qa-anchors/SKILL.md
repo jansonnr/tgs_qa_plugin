@@ -1,6 +1,6 @@
 ---
 name: qa-anchors
-description: Propose and confirm Zephyr dedupe search anchors from testcase draft and materials. Run after /qa-testcases, before sync-index and /qa-dedupe.
+description: Ключевые слова для поиска по тексту тест-кейсов в Zephyr (/key-words). Propose and confirm search_anchors from draft and materials. Run after /create-test-case, before /search-by-keyword and /compare-test-case-for-dedupe.
 ---
 
 # QA anchors (dedupe scope)
@@ -23,10 +23,10 @@ Read [REQUIREMENTS.md](../../docs/REQUIREMENTS.md) §5.
 2. Merge with hints from materials; propose 3–10 `search_anchors` and optional `search_folders` / `project_key`.
 3. Show list in Russian; **do not** call Zephyr search or sync-index until user confirms or edits.
 4. On confirm: write manifest fields per `prompts/anchors.md`, including `anchors_draft_run_id` and `anchors_draft_revision` from the draft envelope.
-5. Suggest next: `/qa-zephyr-sync-index`, then `/qa-dedupe`.
+5. Suggest next: `/search-by-keyword`, then `/compare-test-case-for-dedupe`.
 
 ## Re-run
 
 If user only edits anchors without a new draft, update manifest and set `search_anchors_confirmed: true` after confirm.
 
-If `search_anchors_confirmed` is false, `/qa-dedupe` and sync-index **must stop** and point here.
+If `search_anchors_confirmed` is false, `/compare-test-case-for-dedupe` and `/search-by-keyword` **must stop** and point here.

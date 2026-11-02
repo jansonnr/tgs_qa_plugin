@@ -1,6 +1,6 @@
 ---
-name: qa-apply-zephyr
-description: Apply dedupe-plan в Zephyr после явного подтверждения пользователя
+name: import-in-zephyr
+description: Перенести или обновить утверждённые тест-кейсы в Zephyr
 ---
 
 Run skill **`qa-apply-zephyr`** after user confirmed dedupe-plan.

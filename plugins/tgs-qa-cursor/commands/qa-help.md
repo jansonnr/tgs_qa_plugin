@@ -7,24 +7,24 @@ description: Справка по командам QA-плагина и скво�
 
 ## Поток MVP
 
-`/qa-materials` → (опц.) `/qa-doc-review` → `/qa-testcases` → **`/qa-anchors`** →
-`/qa-zephyr-sync-index` → `/qa-dedupe` → preview → «да, применить» → `/qa-apply-zephyr`
+`/get-confluence-page` → (опц.) `/review-user-story` → `/create-test-case` → **`/key-words`** →
+`/select-folders` → `/search-by-keyword` → `/compare-test-case-for-dedupe` → preview → «да, применить» → `/import-in-zephyr`
 
 ## Команды
 
 | Группа | Команда | Назначение |
 | --- | --- | --- |
 | Базовые | `/qa-help` | Эта справка |
-| | `/qa-materials` | Jira, Confluence, файлы → `.qa/materials/` |
-| | `/qa-doc-review` | Ревью постановки (П1–П6) → `.qa/reviews/doc/` |
-| | `/qa-testcases` | Черновик кейсов → `.qa/drafts/testcases/` |
-| | `/qa-anchors` | Якоря dedupe после черновика → manifest |
-| Zephyr | `/qa-zephyr-browse` | Дерево папок TMS (без search по якорям) |
-| | `/qa-zephyr-select` | Выбор `project_key` / `search_folders` в manifest |
-| | `/qa-zephyr-sync-index` | Index-only cache по папке |
-| | `/qa-zephyr-refresh` | Тела кейсов для update/ask из plan |
-| | `/qa-dedupe` | dedupe-plan.json |
-| | `/qa-apply-zephyr` | create/update в Zephyr после confirm |
+| | `/get-confluence-page` | Получить постановку с Confluence → `.qa/materials/` |
+| | `/review-user-story` | Ревью user story / постановки (П1–П6) → `.qa/reviews/doc/` |
+| | `/create-test-case` | Написать тест-кейсы → `.qa/drafts/testcases/` |
+| | `/key-words` | Ключевые слова для поиска по тексту кейсов в Zephyr → manifest |
+| Zephyr | `/search-test-case-in-zephyr` | Поиск по кейсам: дерево папок TMS |
+| | `/select-folders` | Выбор папок Zephyr (`search_folders`) и проекта |
+| | `/search-by-keyword` | Поиск по ключевым словам → index-кэш |
+| | `/update-test-case` | Подгрузить тела кейсов из Zephyr для diff после правок |
+| | `/compare-test-case-for-dedupe` | Сравнить черновик с Zephyr → dedupe-plan.json |
+| | `/import-in-zephyr` | Перенести/обновить утверждённые кейсы в Zephyr |
 
 Канон: [docs/REQUIREMENTS.md](../docs/REQUIREMENTS.md). Приёмка: [docs/ACCEPTANCE-E2E.md](../docs/ACCEPTANCE-E2E.md).
 

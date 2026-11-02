@@ -1,6 +1,6 @@
 ---
 name: qa-apply-zephyr
-description: Apply dedupe-plan to Zephyr with create and update after explicit user confirmation. Writes apply log under .qa/drafts/testcases/.
+description: Перенести или обновить утверждённые кейсы в Zephyr (/import-in-zephyr). Apply dedupe-plan after explicit user confirmation. Writes apply log under .qa/drafts/testcases/.
 ---
 
 # Apply to Zephyr

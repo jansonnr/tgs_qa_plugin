@@ -13,7 +13,7 @@
 
 **Не вызывай** API Zephyr (search, sync-index), пока пользователь не подтвердил или не отредактировал якоря.
 
-QA на этом шаге подтверждает **фразы**. Папки (`search_folders`, `project_key`) подтверждаются отдельно на `/qa-zephyr-select`. Для dedupe нужны оба.
+QA на этом шаге подтверждает **фразы**. Папки (`search_folders`, `project_key`) подтверждаются отдельно на `/select-folders`. Для dedupe нужны оба.
 
 После подтверждения сохрани в `materials/manifest.json`:
 

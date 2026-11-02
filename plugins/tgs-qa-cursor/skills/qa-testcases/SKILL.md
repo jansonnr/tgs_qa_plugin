@@ -1,6 +1,6 @@
 ---
 name: qa-testcases
-description: Generate structured test case draft JSON from .qa materials and optional doc review. Output under .qa/drafts/testcases/.
+description: Написать тест-кейсы — structured draft JSON from .qa materials and optional doc review. Use for /create-test-case. Output under .qa/drafts/testcases/. Does not call the Zephyr tool create_test_case.
 ---
 
 # Generate test cases
@@ -23,6 +23,6 @@ description: Generate structured test case draft JSON from .qa materials and opt
 7. Substantial change (`name`, preconditions, steps, test_data, expected_results, add/remove case):
    set `search_anchors_confirmed: false`. Labels, folder, status, priority alone do not reset confirm;
    update `anchors_draft_revision` to the new revision.
-8. Suggest next step: **`/qa-anchors`** (then folder select, sync-index and `/qa-dedupe`). Do not skip anchors.
+8. Suggest next step: **`/key-words`**, then `/select-folders`, `/search-by-keyword`, and `/compare-test-case-for-dedupe`. Do not skip key words confirm.
 9. Refine is an explicit user command: snapshot current file to `<run-id>.v<revision>.json`, then write
    the canonical `<run-id>.json` with `revision + 1`. Do not leave the new text only in the snapshot.

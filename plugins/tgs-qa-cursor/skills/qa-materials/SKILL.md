@@ -1,6 +1,6 @@
 ---
 name: qa-materials
-description: Prepare requirement materials for QA workflows in .qa/materials. Use for Jira, Confluence, files, and text before doc review or test case generation. Does not require dedupe anchors (those come after testcase draft).
+description: Получить постановку с Confluence в .qa/materials. Use for /get-confluence-page, a Confluence URL or pageId, and also Jira, files, and pasted text before doc review or writing test cases. Does not require dedupe anchors (those come after the testcase draft).
 ---
 
 # QA materials
@@ -11,7 +11,7 @@ Read [REQUIREMENTS.md](../../docs/REQUIREMENTS.md). Warn on very large material 
 
 1. Read and follow [prompts/_source-trust.md](../../prompts/_source-trust.md).
 
-**Do not** propose or require `search_anchors` here — use `/qa-anchors` after `/qa-testcases`.
+**Do not** propose or require `search_anchors` here — use `/key-words` after `/create-test-case`.
 
 ## MCP (when applicable)
 
@@ -32,4 +32,4 @@ Read [REQUIREMENTS.md](../../docs/REQUIREMENTS.md). Warn on very large material 
    for later TMS scope — save only if user agrees; leave `search_anchors_confirmed: false`.
 5. **Do not** call Zephyr search or dedupe from this skill.
 6. Do not attach images to the model automatically; tell the user to `@`-attach if needed.
-7. Suggest next: `/qa-doc-review` and/or `/qa-testcases`, then `/qa-anchors` before dedupe.
+7. Suggest next: `/review-user-story` and/or `/create-test-case`, then `/key-words` before dedupe.

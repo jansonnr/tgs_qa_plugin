@@ -1,6 +1,6 @@
 ---
 name: qa-dedupe
-description: Match draft test cases against Zephyr index and build dedupe-plan with create, update, skip, or ask. Use after /qa-testcases or on existing draft JSON.
+description: Сравнить черновик с Zephyr для dedupe (/compare-test-case-for-dedupe). Build dedupe-plan with create, update, skip, or ask. Use after /search-by-keyword or on existing draft JSON.
 ---
 
 # QA dedupe
@@ -14,10 +14,10 @@ description: Match draft test cases against Zephyr index and build dedupe-plan w
 
 - `.qa/drafts/testcases/<run-id>.json` exists.
 - `materials/manifest.json` has `search_anchors_confirmed: true`, non-empty `search_anchors`, non-empty `search_folders`, and `project_key`.
-  If anchors are missing — **stop** and run `/qa-anchors`. If folders are missing — **stop** and run `/qa-zephyr-select`.
+  If anchors are missing — **stop** and run `/key-words`. If folders are missing — **stop** and run `/select-folders`.
 - `anchors_draft_run_id` and `anchors_draft_revision` MUST match this draft, unless user explicitly confirmed mismatch in chat.
 - Read [rules/qa-manifest-gate.mdc](../../rules/qa-manifest-gate.mdc) and [config/limits.yaml](../../config/limits.yaml).
-- Index: run `/qa-zephyr-sync-index` or use existing `.qa/cache/zephyr/.../index.json`. If `complete` is false or the read failed, `search_status` is `index_incomplete` or `api_error`, not `ok`.
+- Index: run `/search-by-keyword` or use existing `.qa/cache/zephyr/.../index.json`. If `complete` is false or the read failed, `search_status` is `index_incomplete` or `api_error`, not `ok`.
 
 ## Steps
 
