@@ -13,7 +13,7 @@ description: Сравнить черновик с Zephyr для dedupe (/compare
 ## Preconditions
 
 - `.qa/drafts/testcases/<run-id>.json` exists.
-- `materials/manifest.json` has `search_anchors_confirmed: true`, non-empty `search_anchors`, non-empty `search_folders`, and `project_key`.
+- `materials/manifest.json` has `search_anchors_confirmed: true`, non-empty `search_anchors`, non-empty `select_folders`, and `project_key`.
   If anchors are missing — **stop** and run `/key-words`. If folders are missing — **stop** and run `/select-folders`.
 - `anchors_draft_run_id` and `anchors_draft_revision` MUST match this draft, unless user explicitly confirmed mismatch in chat.
 - Read [rules/qa-manifest-gate.mdc](../../rules/qa-manifest-gate.mdc) and [config/limits.yaml](../../config/limits.yaml).

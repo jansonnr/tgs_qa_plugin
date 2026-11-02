@@ -8,9 +8,9 @@ alwaysApply: false
 
 - `search_anchors_confirmed` MUST быть `true`.
 - `search_anchors` — непустой массив (3–10 фраз после `/key-words`).
-- `search_folders` — непустой массив, `project_key` задан (подтверждены на `/select-folders`).
+- `select_folders` — непустой массив, `project_key` задан (подтверждены на `/select-folders`). При чтении manifest: если `select_folders` пуст, принять legacy-ключ `search_folders`; при записи — только `select_folders`.
 - `anchors_draft_run_id` и `anchors_draft_revision` MUST совпадать с `run_id` и `revision` черновика, либо QA явно подтвердил расхождение в чате.
 
-Browse (`get_folder_tree`), `/select-folders`, list in folder по `search_folders` — **без** gate якорей.
+Browse (`get_folder_tree`), `/select-folders`, list in folder по `select_folders` — **без** gate якорей.
 
 Существенное изменение черновика (`name`, `preconditions`, `steps`, `test_data`, `expected_results`, состав кейсов) сбрасывает `search_anchors_confirmed` в `false`. Смена только labels, folder, status, priority confirm сохраняет и обновляет `anchors_draft_revision`.

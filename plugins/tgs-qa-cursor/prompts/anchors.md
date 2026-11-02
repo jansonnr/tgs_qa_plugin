@@ -5,7 +5,7 @@
 
 1. **Имена** и ключевые формулировки из **шагов/expected** черновика.
 2. Материалы (Jira, Confluence) — модуль, API, сущности, **без** дублирования всего текста задачи.
-3. Опционально уже известные `project_key`, `search_folders` из manifest (Jira Component и т.д.).
+3. Опционально уже известные `project_key`, `select_folders` из manifest (Jira Component и т.д.).
 
 Якоря — для поиска **похожих существующих** кейсов в TMS по name/контексту. Это **не** ключи QA-T*.
 
@@ -13,11 +13,11 @@
 
 **Не вызывай** API Zephyr (search, sync-index), пока пользователь не подтвердил или не отредактировал якоря.
 
-QA на этом шаге подтверждает **фразы**. Папки (`search_folders`, `project_key`) подтверждаются отдельно на `/select-folders`. Для dedupe нужны оба.
+QA на этом шаге подтверждает **фразы**. Папки (`select_folders`, `project_key`) подтверждаются отдельно на `/select-folders`. Для dedupe нужны оба.
 
 После подтверждения сохрани в `materials/manifest.json`:
 
-- `search_anchors`; `search_folders` и `project_key` — только если QA уточнил их здесь
+- `search_anchors`; `select_folders` и `project_key` — только если QA уточнил их здесь
 - `search_anchors_confirmed: true`
 - `anchors_draft_run_id`: `<run-id>` черновика
 - `anchors_draft_revision`: текущий `revision` обёртки черновика

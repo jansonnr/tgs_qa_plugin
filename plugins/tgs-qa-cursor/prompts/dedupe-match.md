@@ -1,6 +1,6 @@
 Сопоставь каждый кейс черновика с уже полученным набором кандидатов Zephyr.
 
-Используй подтверждённые `search_anchors`, непустые `search_folders` и `project_key` из `materials/manifest.json`.
+Используй подтверждённые `search_anchors`, непустые `select_folders` и `project_key` из `materials/manifest.json`.
 `anchors_draft_run_id` и `anchors_draft_revision` должны совпадать с `run_id` и `revision` черновика, иначе остановись.
 
 Способ, которым набран набор кандидатов (поиск API, локальный индекс, метки), этой инструкцией не выбирается. Если индекс с `"complete": false`, выгрузка оборвалась или API вернуло ошибку — `search_status`: `incomplete` или `error`. В этом случае **не** ставь `create` и не пиши «дублей нет».

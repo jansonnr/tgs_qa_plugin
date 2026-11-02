@@ -102,7 +102,7 @@ flowchart TD
 
 **Правило потока:** вызовы Zephyr **search** и dedupe **блокируются**, пока якоря не
 подтверждены на этапе **`/key-words`** (после черновика кейсов). Область поиска
-(`project_key`, `search_folders`) подтверждается отдельно, на `/select-folders`.
+(`project_key`, `select_folders`) подтверждается отдельно, на `/select-folders`.
 Для dedupe нужны оба подтверждения.
 
 Как именно TMS ищет по фразам — открытый вопрос ревью п. 1. Пока он открыт, индекс с
@@ -200,7 +200,7 @@ flowchart TB
 | Артеfact | Обязательно |
 | --- | --- |
 | material | `id`, `type`, `provenance`, `fetched_at`, `text` |
-| manifest | `materials[]`; перед dedupe также `project_key`, непустые `search_folders`, `search_anchors`, `search_anchors_confirmed: true`, `anchors_draft_run_id`, `anchors_draft_revision` |
+| manifest | `materials[]`; перед dedupe также `project_key`, непустые `select_folders`, `search_anchors`, `search_anchors_confirmed: true`, `anchors_draft_run_id`, `anchors_draft_revision` |
 | draft | `run_id`, `revision`, `cases[]`; у кейса `draft_id`, `name`, `steps`, `test_data`, `expected_results` одной длины |
 | dedupe-plan | `run_id`, `draft_revision`, `search_status` (`complete` \| `incomplete` \| `error`), `items[]` с `draft_id`, `action`, `rationale` |
 | apply-log | `run_id`, `draft_revision`, `preview_fingerprint`, `user_confirmed`, `finished`, `items[]` с `draft_id`, `operation`, `status` |
@@ -238,7 +238,7 @@ flowchart TB
 | **FR-MAT-01** | Сбор Jira, Confluence, файлов, текста в нормализованный JSON | qa-materials | materials/* |
 | **FR-MAT-02** | `clarification` в manifest; приоритет над текстом материалов | qa-materials, qa-testcases | manifest |
 | **FR-MAT-03** | **Не** требовать и **не** confirm якоря на этапе materials | qa-materials | manifest |
-| **FR-MAT-04** | Опционально предложить `project_key`, `search_folders` без gate | qa-materials | manifest |
+| **FR-MAT-04** | Опционально предложить `project_key`, `select_folders` без gate | qa-materials | manifest |
 | **FR-DOC-01** | Doc review → violations, remarks, summary, sources | qa-doc-review | reviews/doc/ |
 | **FR-DOC-02** | Без RAG / knowledge base | qa-doc-review | — |
 | **FR-TC-01** | Генерация связного suite кейсов по materials (+ optional doc review) | qa-testcases | draft JSON+MD |

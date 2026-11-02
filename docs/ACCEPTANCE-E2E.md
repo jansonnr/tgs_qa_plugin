@@ -14,7 +14,7 @@
 3. **Кейсы** — `/create-test-case` → `.qa/drafts/testcases/<run-id>.json` (обёртка `run_id`, `revision`, `cases`, ≥5 кейсов).
 4. **Якоря** — `/key-words`: предложение из черновика + материалов → QA подтверждает фразы →
    `search_anchors_confirmed: true`, `anchors_draft_run_id`, `anchors_draft_revision`.
-5. **Папки** — `/select-folders`: QA подтверждает `project_key` и `search_folders`.
+5. **Папки** — `/select-folders`: QA подтверждает `project_key` и `select_folders`.
 6. **Index TMS** — `/search-by-keyword` → index без полных testScript и с полем `complete`.
 7. **Dedupe** — `/compare-test-case-for-dedupe` → `<run-id>.dedupe-plan.json`. При кандидате действие `ask`, не сразу `update`.
    QA переводит нужные строки в `update` или `skip`.

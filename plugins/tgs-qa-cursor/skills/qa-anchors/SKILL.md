@@ -20,7 +20,7 @@ Read [REQUIREMENTS.md](../../docs/REQUIREMENTS.md) §5.
 ## Steps
 
 1. Load the draft JSON; extract distinctive terms from case `name` and significant steps.
-2. Merge with hints from materials; propose 3–10 `search_anchors` and optional `search_folders` / `project_key`.
+2. Merge with hints from materials; propose 3–10 `search_anchors` and optional `select_folders` / `project_key`.
 3. Show list in Russian; **do not** call Zephyr search or sync-index until user confirms or edits.
 4. On confirm: write manifest fields per `prompts/anchors.md`, including `anchors_draft_run_id` and `anchors_draft_revision` from the draft envelope.
 5. Suggest next: `/search-by-keyword`, then `/compare-test-case-for-dedupe`.

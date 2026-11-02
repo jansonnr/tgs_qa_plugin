@@ -3,7 +3,7 @@
   "clarification": "Проверить негативы по оплате",
   "project_key": "QA",
   "testcases_project_prompt": "prompts/testcases-project.md",
-  "search_folders": ["/QA/Payments"],
+  "select_folders": ["/QA/Payments"],
   "search_anchors": [],
   "search_anchors_confirmed": false,
   "anchors_draft_run_id": null,

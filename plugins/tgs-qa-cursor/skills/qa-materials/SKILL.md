@@ -28,7 +28,7 @@ Read [REQUIREMENTS.md](../../docs/REQUIREMENTS.md). Warn on very large material 
    per [schemas/material.example.json](../../schemas/material.example.json): stable `id`, `type`, `provenance`, `fetched_at`, `text`.
    Replace tokens, passwords and `Bearer` values in `text` with `[secret]`; do not echo the secret.
 3. Update `manifest.json`: `materials[]`, `clarification`, `run_id`. Write only under `.qa/`.
-4. **Optional (no confirm gate):** suggest `project_key` and `search_folders` from Jira/Component
+4. **Optional (no confirm gate):** suggest `project_key` and `select_folders` from Jira/Component
    for later TMS scope — save only if user agrees; leave `search_anchors_confirmed: false`.
 5. **Do not** call Zephyr search or dedupe from this skill.
 6. Do not attach images to the model automatically; tell the user to `@`-attach if needed.

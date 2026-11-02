@@ -31,7 +31,8 @@ Gap: `get_jira_issue`, `list_folder_test_cases`, `update_test_case` — см. [M
 
 ## select
 
-- После browse или по известным путям: уточнить `project_key`, `search_folders[]`.
+- После browse или по известным путям: уточнить `project_key`, `select_folders[]`.
+- При чтении manifest: `select_folders` или legacy `search_folders`; при записи — только `select_folders`.
 - Писать в `materials/manifest.json` только после согласия пользователя.
 - **Не** выставлять `search_anchors_confirmed: true` здесь.
 
@@ -41,8 +42,8 @@ Gap: `get_jira_issue`, `list_folder_test_cases`, `update_test_case` — см. [M
 - Перед **`search_test_cases` по `search_anchors`**: manifest MUST have
   `search_anchors_confirmed: true`. Иначе **stop** → `/key-words`.
 - `anchors_draft_run_id` и `anchors_draft_revision` MUST совпадать с черновиком; при расхождении — спросить QA.
-- `search_folders` и `project_key` MUST быть заданы; иначе **stop** → `/select-folders`.
-- Набор кейсов: `list_folder_test_cases` в scope `search_folders` и/или узкий `search_test_cases` по якорям.
+- `select_folders` и `project_key` MUST быть заданы; иначе **stop** → `/select-folders`.
+- Набор кейсов: `list_folder_test_cases` в scope `select_folders` и/или узкий `search_test_cases` по якорям.
   Как гарантировать все страницы и вложенные папки — открытый вопрос ревью п. 1; не выдумывай полноту.
 - **Не** один запрос на весь проект с огромным `maxResults`.
 - `sync_testcase_index` с `include_subfolders=true` для проекта, отличного от настроенного, требует `project_id` этого же проекта. Без него MCP вернёт `index_incomplete` — это не «дублей нет».

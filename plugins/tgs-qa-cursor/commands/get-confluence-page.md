@@ -10,6 +10,6 @@ Run skill **`qa-materials`**.
 - Jira, файл или вставленный текст принимай так же, если пользователь их дал.
 - **Не** предлагай и **не** требуй `search_anchors` — якоря только после `/create-test-case` через `/key-words`.
 - **Не** вызывай Zephyr search или dedupe.
-- Опционально (без gate): предложи `project_key` и `search_folders` — сохраняй только после согласия пользователя.
+- Опционально (без gate): предложи `project_key` и `select_folders` — сохраняй только после согласия пользователя.
 
 Следующий шаг: `/review-user-story` и/или `/create-test-case`.
