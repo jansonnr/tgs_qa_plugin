@@ -1,45 +1,27 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-  Устанавливает tgs-qa-cursor в Cursor (local plugin) и готовит MCP zephyr-scale-mcp.
-
-.DESCRIPTION
-  1) Клонирует репозиторий (или использует уже скачанный).
-  2) Junction: %USERPROFILE%\.cursor\plugins\local\tgs-qa-cursor -> ...\plugins\tgs-qa-cursor
-  3) Зависимости MCP: uv sync (если есть uv) иначе venv + pip install -e .
-  4) Опционально создаёт шаблон %APPDATA%\zephyr-scale-mcp\config.json (без секретов в вывод).
-
-.PARAMETER CloneDir
-  Куда клонировать репозиторий, если -UseThisRepo не задан.
-
-.PARAMETER RepoUrl
-  URL git-репозитория marketplace.
+  Копирует плагин tgs-qa-cursor в Cursor и ставит Python-зависимости для Zephyr/Jira.
 
 .PARAMETER UseThisRepo
-  Не клонировать: взять корень репо от каталога scripts\ (откуда запущен install из git clone).
+  Запуск из уже скачанного clone (каталог scripts\ внутри репозитория).
 
-.PARAMETER SkipMcpDeps
-  Только junction, без Python/uv.
-
-.PARAMETER ForceJunction
-  Удалить существующий local\tgs-qa-cursor (junction или папку) и создать заново.
-
-.EXAMPLE
-  irm https://raw.githubusercontent.com/jansonnr/tgs_qa_plugin/main/scripts/install-tgs-qa-cursor.ps1 | iex
-
-.EXAMPLE
-  cd C:\tools\tgs_qa_plugin
-  .\scripts\install-tgs-qa-cursor.ps1 -UseThisRepo
+.PARAMETER Force
+  Удалить существующий %USERPROFILE%\.cursor\plugins\local\tgs-qa-cursor и скопировать заново.
 #>
 [CmdletBinding()]
 param(
     [string] $CloneDir = (Join-Path $env:USERPROFILE "tools\tgs_qa_plugin"),
     [string] $RepoUrl = "https://github.com/jansonnr/tgs_qa_plugin.git",
     [switch] $UseThisRepo,
-    [switch] $SkipMcpDeps,
-    [switch] $ForceJunction,
-    [switch] $WriteConfigTemplate
+    [switch] $SkipPythonDeps,
+    [switch] $Force,
+    [switch] $WriteConfigTemplate,
+    [Alias("ForceJunction")]
+    [switch] $ForceCopy
 )
+
+if ($ForceCopy) { $Force = $true }
 
 $ErrorActionPreference = "Stop"
 
@@ -51,79 +33,60 @@ function Test-Command([string] $Name) {
     $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
-function Remove-PluginLink([string] $Path) {
-    if (-not (Test-Path -LiteralPath $Path)) { return }
-    $item = Get-Item -LiteralPath $Path -Force
-    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
-        cmd /c "rmdir `"$Path`""
-    } else {
-        throw "Уже существует обычная папка (не junction): $Path. Переименуйте или запустите с -ForceJunction после бэкапа."
+function Copy-PluginToLocal([string] $Source, [string] $Dest, [switch] $Replace) {
+    if (-not (Test-Path -LiteralPath $Source)) {
+        throw "Нет исходника плагина: $Source"
     }
-}
-
-function New-PluginJunction([string] $Link, [string] $Target) {
-    $parent = Split-Path -Parent $Link
+    $parent = Split-Path -Parent $Dest
     if (-not (Test-Path -LiteralPath $parent)) {
         New-Item -ItemType Directory -Path $parent -Force | Out-Null
     }
-    if (Test-Path -LiteralPath $Link) {
-        if ($ForceJunction) {
-            Remove-PluginLink -Path $Link
-        } else {
-            throw "Уже есть: $Link. Используйте -ForceJunction или удалите вручную."
+    if (Test-Path -LiteralPath $Dest) {
+        if (-not $Replace) {
+            throw "Уже есть: $Dest. Запустите с -Force или удалите папку."
         }
+        Remove-Item -LiteralPath $Dest -Recurse -Force
     }
-    $targetFull = (Resolve-Path -LiteralPath $Target).Path
-    cmd /c "mklink /J `"$Link`" `"$targetFull`""
-    if ($LASTEXITCODE -ne 0) { throw "mklink /J не удался ($Link -> $targetFull)" }
+    Write-Host "robocopy `"$Source`" -> `"$Dest`""
+    & robocopy $Source $Dest /E /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw "robocopy failed with exit code $LASTEXITCODE" }
 }
 
-function Install-McpDeps([string] $McpDir) {
+function Install-PythonDeps([string] $McpDir) {
     if (-not (Test-Path (Join-Path $McpDir "pyproject.toml"))) {
         throw "Нет pyproject.toml: $McpDir"
     }
     Push-Location $McpDir
     try {
         if (Test-Command "uv") {
-            Write-Host "uv sync в $McpDir"
             & uv sync
-            if ($LASTEXITCODE -ne 0) { throw "uv sync завершился с кодом $LASTEXITCODE" }
-            & uv run python -c "import zephyr_scale_mcp; print('zephyr_scale_mcp OK')"
-            if ($LASTEXITCODE -ne 0) { throw "uv run: модуль не импортируется" }
+            if ($LASTEXITCODE -ne 0) { throw "uv sync failed" }
+            & uv run python -c "import zephyr_scale_mcp; print('OK')"
             return
         }
-        Write-Host "uv не найден — venv + pip install -e ."
         $py = $null
         foreach ($candidate in @("py -3.12", "py -3.11", "python")) {
-            $parts = $candidate -split " "
-            if (Test-Command $parts[0]) {
-                $py = $candidate
-                break
-            }
+            if (Test-Command ($candidate -split " ")[0]) { $py = $candidate; break }
         }
-        if (-not $py) { throw "Нужен Python 3.11+ или установите uv: https://docs.astral.sh/uv/" }
-        Invoke-Expression "$py -m venv .venv"
+        if (-not $py) { throw "Нужен Python 3.11+ или uv: https://docs.astral.sh/uv/" }
+        if (-not (Test-Path ".venv")) { Invoke-Expression "$py -m venv .venv" }
         $pip = Join-Path $McpDir ".venv\Scripts\python.exe"
         & $pip -m pip install -e .
-        if ($LASTEXITCODE -ne 0) { throw "pip install -e . failed" }
-        & $pip -c "import zephyr_scale_mcp; print('zephyr_scale_mcp OK')"
+        if ($LASTEXITCODE -ne 0) { throw "pip install failed" }
+        & $pip -c "import zephyr_scale_mcp; print('OK')"
     } finally {
         Pop-Location
     }
 }
 
 function Write-ConfigTemplateIfAsked {
-    $configDir = Join-Path $env:APPDATA "zephyr-scale-mcp"
-    $configPath = Join-Path $configDir "config.json"
-    if ((Test-Path -LiteralPath $configPath) -and -not $WriteConfigTemplate) {
-        Write-Host "config.json уже есть: $configPath"
+    if (-not $WriteConfigTemplate) { return }
+    $configPath = Join-Path $env:APPDATA "zephyr-scale-mcp\config.json"
+    if (Test-Path -LiteralPath $configPath) {
+        Write-Host "config.json уже есть, не перезаписываем: $configPath"
         return
     }
-    if (-not $WriteConfigTemplate) {
-        Write-Host "Шаблон config.json не создан (добавьте -WriteConfigTemplate)."
-        return
-    }
-    New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+    New-Item -ItemType Directory -Path (Split-Path $configPath) -Force | Out-Null
     @"
 {
   "base_url": "https://your-jira-host.example/soft",
@@ -134,45 +97,32 @@ function Write-ConfigTemplateIfAsked {
   "wiki_url": ""
 }
 "@ | Set-Content -Path $configPath -Encoding UTF8
-    Write-Host "Шаблон: $configPath — заполните токены вручную."
+    Write-Host "Шаблон: $configPath"
 }
 
-# --- main ---
-
-Write-Step "Определение корня репозитория"
+Write-Step "Репозиторий"
 if ($UseThisRepo) {
     $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-    Write-Host "UseThisRepo: $RepoRoot"
-} else {
-    if (-not (Test-Path -LiteralPath $CloneDir)) {
-        if (-not (Test-Command "git")) { throw "git не найден. Установите Git или используйте -UseThisRepo из существующего clone." }
-        Write-Step "git clone -> $CloneDir"
-        $parent = Split-Path -Parent $CloneDir
-        if (-not (Test-Path -LiteralPath $parent)) {
-            New-Item -ItemType Directory -Path $parent -Force | Out-Null
-        }
-        & git clone $RepoUrl $CloneDir
-        if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
-    } else {
-        Write-Host "Каталог уже есть: $CloneDir (обновление: git pull вручную)."
-    }
+} elseif (-not (Test-Path -LiteralPath $CloneDir)) {
+    if (-not (Test-Command "git")) { throw "git не найден" }
+    New-Item -ItemType Directory -Path (Split-Path $CloneDir -Parent) -Force -ErrorAction SilentlyContinue | Out-Null
+    & git clone $RepoUrl $CloneDir
+    if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
     $RepoRoot = (Resolve-Path -LiteralPath $CloneDir).Path
+} else {
+    $RepoRoot = (Resolve-Path -LiteralPath $CloneDir).Path
+    Write-Host "Используем: $RepoRoot (обновление: git pull, затем этот скрипт с -Force)"
 }
 
 $PluginSrc = Join-Path $RepoRoot "plugins\tgs-qa-cursor"
-if (-not (Test-Path -LiteralPath $PluginSrc)) {
-    throw "Не найден плагин: $PluginSrc (ожидается структура team marketplace)."
-}
+$PluginLocal = Join-Path $env:USERPROFILE ".cursor\plugins\local\tgs-qa-cursor"
 
-$LocalLink = Join-Path $env:USERPROFILE ".cursor\plugins\local\tgs-qa-cursor"
+Write-Step "Копия плагина для Cursor"
+Copy-PluginToLocal -Source $PluginSrc -Dest $PluginLocal -Replace:$Force
 
-Write-Step "Junction local plugin"
-Write-Host "$LocalLink -> $PluginSrc"
-New-PluginJunction -Link $LocalLink -Target $PluginSrc
-
-if (-not $SkipMcpDeps) {
-    Write-Step "MCP zephyr-scale-mcp"
-    Install-McpDeps -McpDir (Join-Path $PluginSrc "zephyr-scale-mcp")
+if (-not $SkipPythonDeps) {
+    Write-Step "Python (Zephyr/Jira внутри плагина)"
+    Install-PythonDeps -McpDir (Join-Path $PluginLocal "zephyr-scale-mcp")
 }
 
 Write-ConfigTemplateIfAsked
@@ -180,11 +130,11 @@ Write-ConfigTemplateIfAsked
 Write-Step "Готово"
 Write-Host @"
 
-Дальше:
-  1. Cursor -> Reload Window
-  2. Customize -> Plugins -> включить TGS QA Cursor
-  3. Токены: %APPDATA%\zephyr-scale-mcp\config.json (см. README)
-  4. Проверка: /qa-help в чате
+1. Cursor: Reload Window
+2. Customize -> Plugins -> TGS QA Cursor (включить; third-party plugins — если выключено)
+3. %APPDATA%\zephyr-scale-mcp\config.json — токены
+4. /qa-help в рабочем проекте
 
-Обновление плагина: git pull в $RepoRoot , затем Reload Window.
+Обновление: git pull в $RepoRoot , затем:
+  .\scripts\install-tgs-qa-cursor.ps1 -UseThisRepo -Force
 "@

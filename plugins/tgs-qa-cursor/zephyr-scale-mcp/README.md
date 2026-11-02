@@ -1,24 +1,9 @@
 # zephyr-scale-mcp
 
-MCP-сервер Jira / Zephyr Scale / Confluence для плагина **tgs-qa-cursor**.
+Python-часть плагина **tgs-qa-cursor** (Jira, Zephyr, Confluence). Отдельно не ставят — через [scripts/install-tgs-qa-cursor.ps1](../../../scripts/install-tgs-qa-cursor.ps1) после `git clone`.
 
-## Установка зависимостей
+Ручная установка только в **local-копии** плагина:
 
-Команду выполняй **в этом каталоге** (здесь `pyproject.toml`), не в родительском `tgs-qa-cursor`:
+`%USERPROFILE%\.cursor\plugins\local\tgs-qa-cursor\zephyr-scale-mcp`
 
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e .
-```
-
-Проверка:
-
-```powershell
-.\.venv\Scripts\python.exe -m zephyr_scale_mcp --help
-```
-
-## Конфигурация
-
-Токены — вручную, см. корневой [README.md](../../../README.md) (раздел «Доступ к Jira / Zephyr / Confluence»).
-
-Файл по умолчанию (Windows): `%APPDATA%\zephyr-scale-mcp\config.json`.
+Токены: [README.md](../../../README.md).

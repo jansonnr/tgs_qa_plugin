@@ -1,57 +1,56 @@
-# tgs-qa-cursor
+# TGS QA Cursor
 
-Cursor-плагин для QA: материалы, doc review, черновики тест-кейсов, dedupe и
-apply (create/update) в Zephyr Scale.
+Cursor-плагин для QA: материалы, doc review, черновики кейсов, dedupe и import в Zephyr Scale.
 
-Репозиторий: [jansonnr/tgs_qa_plugin](https://github.com/jansonnr/tgs_qa_plugin).
-Форматы и поведение: [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
+Репозиторий: [jansonnr/tgs_qa_plugin](https://github.com/jansonnr/tgs_qa_plugin).  
+Требования к поведению: [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
 
-Код плагина: [plugins/tgs-qa-cursor/](plugins/tgs-qa-cursor/). Team marketplace:
-[.cursor-plugin/marketplace.json](.cursor-plugin/marketplace.json).
+---
 
-**Scope v0.3:** materials, doc review, testcases, Zephyr dedupe/apply.
+## Что нужно на ПК
 
-## Установка (рекомендуется)
+- **Git**
+- **Cursor**
+- **Python 3.11+** или [**uv**](https://docs.astral.sh/uv/) (для Jira/Zephyr из плагина; отдельный MCP в Settings не добавляют)
+
+---
+
+## Установка
+
+### 1. Clone
 
 ```powershell
 git clone https://github.com/jansonnr/tgs_qa_plugin.git C:\tools\tgs_qa_plugin
 cd C:\tools\tgs_qa_plugin
+```
+
+### 2. Скрипт (копия плагина + Python)
+
+```powershell
 .\scripts\install-tgs-qa-cursor.ps1 -UseThisRepo -WriteConfigTemplate
 ```
 
-Скрипт сам: **junction** `plugins/tgs-qa-cursor` → `%USERPROFILE%\.cursor\plugins\local\tgs-qa-cursor`, зависимости MCP (`uv` или venv+pip), опционально шаблон `config.json`. Дальше: Reload Window → Customize → Plugins → **TGS QA Cursor**.
+Скрипт кладёт плагин сюда:
 
-Параметры: `-CloneDir`, `-ForceJunction`, `-SkipMcpDeps`, `-WriteConfigTemplate` — см. [scripts/install-tgs-qa-cursor.ps1](scripts/install-tgs-qa-cursor.ps1).
+`%USERPROFILE%\.cursor\plugins\local\tgs-qa-cursor`
 
-**Без скрипта** (то же самое руками): junction как выше → MCP в каталоге `plugins/tgs-qa-cursor/zephyr-scale-mcp` (см. [zephyr-scale-mcp/README.md](plugins/tgs-qa-cursor/zephyr-scale-mcp/README.md)) → Reload Window.
+и ставит зависимости в `...\local\tgs-qa-cursor\zephyr-scale-mcp`. **Junction/symlink не используются** — Cursor так видит local-плагины.
 
-**Team marketplace** (опционально, без clone): Dashboard → Refresh → Plugins в IDE. Не рекомендуется для MCP: путь `marketplaces\...\<commit>\` меняется при Refresh.
-
-MCP в Settings отдельно **не** добавляют — сервер **zephyr-scale** из `plugin.json` плагина.
-
-## Python для MCP
-
-Если ставили через **скрипт**, venv/`uv` уже настроены. Этот раздел — для ручной установки или отладки.
-
-MCP — проект **`zephyr-scale-mcp`** (`pyproject.toml`). **`pip install -e .` из `plugins/tgs-qa-cursor`** не сработает (нет `pyproject.toml` в корне плагина).
+Повторная установка / обновление после `git pull`:
 
 ```powershell
-cd C:\path\to\tgs_qa_plugin\plugins\tgs-qa-cursor\zephyr-scale-mcp
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e .
+.\scripts\install-tgs-qa-cursor.ps1 -UseThisRepo -Force
 ```
 
-Если системный `python` из плагина не видит пакет — в `%USERPROFILE%\.cursor\mcp.json` укажите полный путь к
-`...\zephyr-scale-mcp\.venv\Scripts\python.exe`, `cwd` = `...\zephyr-scale-mcp`, `PYTHONPATH` = `...\zephyr-scale-mcp\src`
-(см. [mcp.example.json](plugins/tgs-qa-cursor/mcp.example.json)).
+### 3. Cursor
 
-## Доступ к Jira / Zephyr / Confluence (вручную)
+1. **Reload Window**
+2. **Customize → Plugins** → включить **TGS QA Cursor**
+3. Если плагина нет — включить **Include third-party Plugins, Skills, and other configs**; на Teams/Enterprise админ должен разрешить **Allow Local Plugin Imports**
 
-Токены **не** настраиваются через чат и tool `set_credentials`. Только ручная конфигурация на компьютере пользователя.
+### 4. Токены (вручную)
 
-**Вариант A — файл (рекомендуется на Windows):**
-
-`%APPDATA%\zephyr-scale-mcp\config.json`
+Файл `%APPDATA%\zephyr-scale-mcp\config.json`:
 
 ```json
 {
@@ -64,49 +63,57 @@ py -3.12 -m venv .venv
 }
 ```
 
-`wiki_url` можно оставить пустым — тогда wiki = `{base_url}/wiki`. Файл не коммитить.
+Не коммитить. `-WriteConfigTemplate` создаёт файл **только если его ещё нет**.
 
-**Вариант B — переменные окружения** (имеют приоритет над файлом):
+### 5. Проверка
 
-| Переменная | Назначение |
-| --- | --- |
-| `ZEPHYR_BEARER_TOKEN` | Jira / Zephyr API |
-| `ZEPHYR_WIKI_BEARER_TOKEN` | Confluence |
-| `ZEPHYR_BASE_URL` | Базовый URL (без `/wiki`) |
-| `ZEPHYR_WIKI_URL` | Confluence, если не `{base_url}/wiki` |
-| `ZEPHYR_PROJECT_KEY` / `ZEPHYR_PROJECT_ID` | Дефолты проекта |
+Откройте **репозиторий продукта** (не `tgs_qa_plugin`) → в чате `/qa-help`.
 
-Их можно прописать в `env` блока `zephyr-scale` в `%USERPROFILE%\.cursor\mcp.json`, если переопределяете команду Python.
+---
 
-После правок — Reload Window или перезапуск MCP в Cursor.
+## Рабочий проект (отдельный git)
 
-## Рабочий проект
-
-В `.gitignore` репозитория, где ведёте QA:
+В репозитории, где ведёте задачу, в `.gitignore`:
 
 ```gitignore
 .qa/cache/
 ```
 
-Первый сценарий: `/get-confluence-page` → `/create-test-case` → **`/key-words`** → `/select-folders` → `/search-by-keyword` → `/compare-test-case-for-dedupe` → preview → «да, применить» → `/import-in-zephyr`.
+В clone плагина (`C:\tools\tgs_qa_plugin`) это **не обязательно**.
+
+---
+
+## Если Zephyr/Jira не отвечают
+
+Плагин в списке есть, но tools падают — часто Cursor запускает не тот Python. В `%USERPROFILE%\.cursor\mcp.json` укажите интерпретатор из **local-копии** плагина:
+
+`%USERPROFILE%\.cursor\plugins\local\tgs-qa-cursor\zephyr-scale-mcp\.venv\Scripts\python.exe`
+
+Пример полного блока: [plugins/tgs-qa-cursor/mcp.example.json](plugins/tgs-qa-cursor/mcp.example.json).
+
+---
 
 ## Команды
 
 | Этап | Slash |
 | --- | --- |
 | Справка | `/qa-help` |
-| Постановка → кейсы | `/get-confluence-page`, `/review-user-story`, `/create-test-case` |
+| Материалы → кейсы | `/get-confluence-page`, `/review-user-story`, `/create-test-case` |
 | Ключевые слова | `/key-words` |
 | Zephyr | `/search-test-case-in-zephyr`, `/select-folders`, `/search-by-keyword`, `/update-test-case`, `/compare-test-case-for-dedupe`, `/import-in-zephyr` |
 
-Промпты: [plugins/tgs-qa-cursor/prompts/](plugins/tgs-qa-cursor/prompts/). Примеры JSON: [plugins/tgs-qa-cursor/schemas/](plugins/tgs-qa-cursor/schemas/). Контракт MCP: [docs/MCP-EXTEND.md](docs/MCP-EXTEND.md).
+Промпты: [plugins/tgs-qa-cursor/prompts/](plugins/tgs-qa-cursor/prompts/).  
+MCP tools: [docs/MCP-EXTEND.md](docs/MCP-EXTEND.md).  
+Метка create в Zephyr: **`AI_Cursor`** — [config/zephyr-defaults.yaml](plugins/tgs-qa-cursor/config/zephyr-defaults.yaml).
 
-При create в Zephyr метка **`AI_Cursor`** — [plugins/tgs-qa-cursor/config/zephyr-defaults.yaml](plugins/tgs-qa-cursor/config/zephyr-defaults.yaml).
+---
+
+## Team marketplace (опционально)
+
+Dashboard → import repo → Refresh. Для разработки команды проще **clone + скрипт** выше: путь стабильный, без `marketplaces\...\<commit>\`.
+
+---
 
 ## Лицензия
 
-[MIT](LICENSE). Copyright (c) 2026 Nelli.
-
-## Версия
-
-0.3.6 — [CHANGELOG.md](CHANGELOG.md).
+[MIT](LICENSE). Версия: [CHANGELOG.md](CHANGELOG.md).
