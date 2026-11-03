@@ -7,3 +7,5 @@ Python-часть плагина **tgs-qa-cursor** (Jira, Zephyr, Confluence). �
 `%USERPROFILE%\.cursor\plugins\local\tgs-qa-cursor\zephyr-scale-mcp`
 
 Токены: [README.md](../../../README.md).
+
+Cursor запускает MCP через `run_mcp.py` (интерпретатор из `.venv` в этой папке). После `git pull` обновите local-копию: `install-tgs-qa-cursor.ps1 -UseThisRepo -Force`.

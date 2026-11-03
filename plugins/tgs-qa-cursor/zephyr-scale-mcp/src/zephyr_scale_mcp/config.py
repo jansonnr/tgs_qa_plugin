@@ -102,7 +102,7 @@ def _read_file() -> dict[str, str]:
     if not path.is_file():
         return {}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except json.JSONDecodeError as exc:
         raise ConfigError(f"Некорректный JSON в {path}: {exc}") from exc
     if not isinstance(data, dict):

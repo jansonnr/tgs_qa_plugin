@@ -85,11 +85,20 @@ cd C:\tools\tgs_qa_plugin
 
 ## Если Zephyr/Jira не отвечают
 
-Плагин в списке есть, но tools падают — часто Cursor запускает не тот Python. В `%USERPROFILE%\.cursor\mcp.json` укажите интерпретатор из **local-копии** плагина:
+**`ModuleNotFoundError: No module named 'mcp'`** — зависимости стоят в venv плагина, а Cursor вызвал другой Python. В `mcp.json` плагина сервер запускается через [run_mcp.py](plugins/tgs-qa-cursor/zephyr-scale-mcp/run_mcp.py): system `python` только стартует скрипт, MCP идёт из `.venv` в local-копии.
 
-`%USERPROFILE%\.cursor\plugins\local\tgs-qa-cursor\zephyr-scale-mcp\.venv\Scripts\python.exe`
+1. Убедитесь, что venv есть:  
+   `%USERPROFILE%\.cursor\plugins\local\tgs-qa-cursor\zephyr-scale-mcp\.venv\`
+2. Если нет или ошибка остаётся после **Reload Window**:
 
-Пример полного блока: [plugins/tgs-qa-cursor/mcp.example.json](plugins/tgs-qa-cursor/mcp.example.json).
+   ```powershell
+   cd C:\tools\tgs_qa_plugin
+   .\scripts\install-tgs-qa-cursor.ps1 -UseThisRepo -Force
+   ```
+
+3. Ручное переопределение (редко нужно): в `%USERPROFILE%\.cursor\mcp.json` укажите `.venv\Scripts\python.exe` — см. [mcp.example.json](plugins/tgs-qa-cursor/mcp.example.json).
+
+Другие сбои tools (401, timeout) — проверьте `%APPDATA%\zephyr-scale-mcp\config.json`.
 
 ---
 
